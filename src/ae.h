@@ -35,6 +35,10 @@
 
 #include <time.h>
 
+#include "uthash.h"
+#include <dmtr/latency.h>
+#include <dmtr/types.h>
+
 #define AE_OK 0
 #define AE_ERR -1
 
@@ -66,6 +70,7 @@ typedef void aeFileProc(struct aeEventLoop *eventLoop, int fd, void *clientData,
 typedef int aeTimeProc(struct aeEventLoop *eventLoop, long long id, void *clientData);
 typedef void aeEventFinalizerProc(struct aeEventLoop *eventLoop, void *clientData);
 typedef void aeBeforeSleepProc(struct aeEventLoop *eventLoop);
+typedef void aeQueueProc(struct aeEventLoop *eventLoop, int code, dmtr_qresult_t *qr, void *clientData);
 
 /* File event structure */
 typedef struct aeFileEvent {
@@ -92,6 +97,13 @@ typedef struct aeFiredEvent {
     int mask;
 } aeFiredEvent;
 
+typedef struct aeQueueEvent {
+    UT_hash_handle hh;
+    dmtr_qtoken_t qt;
+    aeQueueProc *qProc;
+    void *clientData;
+} aeQueueEvent;
+
 /* State of an event based program */
 typedef struct aeEventLoop {
     int maxfd;   /* highest file descriptor currently registered */
@@ -101,16 +113,23 @@ typedef struct aeEventLoop {
     aeFileEvent *events; /* Registered events */
     aeFiredEvent *fired; /* Fired events */
     aeTimeEvent *timeEventHead;
+    aeQueueEvent *qEvents;
     int stop;
     void *apidata; /* This is used for polling API specific data */
     aeBeforeSleepProc *beforesleep;
     aeBeforeSleepProc *aftersleep;
 } aeEventLoop;
 
+extern dmtr_latency_t *aePollLatency;
+extern dmtr_latency_t *aePushLatency;
+extern dmtr_latency_t *aeWaitForPushLatency;
+
 /* Prototypes */
 aeEventLoop *aeCreateEventLoop(int setsize);
 void aeDeleteEventLoop(aeEventLoop *eventLoop);
 void aeStop(aeEventLoop *eventLoop);
+int aeCreateQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt, aeQueueProc *qProc, void *clientData);
+void aeDeleteQueueEvents(aeEventLoop *eventLoop, void *clientData);
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
         aeFileProc *proc, void *clientData);
 void aeDeleteFileEvent(aeEventLoop *eventLoop, int fd, int mask);

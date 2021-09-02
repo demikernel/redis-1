@@ -33,6 +33,8 @@
 
 #ifndef __HIREDIS_H
 #define __HIREDIS_H
+
+#include <dmtr/types.h>
 #include "read.h"
 #include <stdarg.h> /* for va_list */
 #include <sys/time.h> /* for struct timeval */
@@ -140,10 +142,12 @@ enum redisConnectionType {
 typedef struct redisContext {
     int err; /* Error flags, 0 when there is no error */
     char errstr[128]; /* String representation of error when applicable */
-    int fd;
+    int qd;
     int flags;
     char *obuf; /* Write buffer */
     redisReader *reader; /* Protocol reader */
+    dmtr_qtoken_t push_qt;
+    dmtr_qtoken_t pop_qt;
 
     enum redisConnectionType connection_type;
     struct timeval *timeout;
@@ -170,7 +174,7 @@ redisContext *redisConnectBindNonBlockWithReuse(const char *ip, int port,
 redisContext *redisConnectUnix(const char *path);
 redisContext *redisConnectUnixWithTimeout(const char *path, const struct timeval tv);
 redisContext *redisConnectUnixNonBlock(const char *path);
-redisContext *redisConnectFd(int fd);
+redisContext *redisConnectQd(int qd);
 
 /**
  * Reconnect the given context using the saved information.
@@ -186,7 +190,7 @@ int redisReconnect(redisContext *c);
 int redisSetTimeout(redisContext *c, const struct timeval tv);
 int redisEnableKeepAlive(redisContext *c);
 void redisFree(redisContext *c);
-int redisFreeKeepFd(redisContext *c);
+int redisFreeKeepQd(redisContext *c);
 int redisBufferRead(redisContext *c);
 int redisBufferWrite(redisContext *c, int *done);
 

@@ -81,22 +81,7 @@ static inline size_t spt_min(size_t a, size_t b) {
  * http://lists.freebsd.org/pipermail/freebsd-stable/2008-June/043136.html
  */
 static int spt_clearenv(void) {
-#if __GLIBC__
-	clearenv();
-
-	return 0;
-#else
-	extern char **environ;
-	static char **tmp;
-
-	if (!(tmp = malloc(sizeof *tmp)))
-		return errno;
-
-	tmp[0]  = NULL;
-	environ = tmp;
-
-	return 0;
-#endif
+	environ = NULL;
 } /* spt_clearenv() */
 
 

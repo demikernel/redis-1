@@ -39,10 +39,13 @@
 #include <string.h>
 #include <time.h>
 #include <errno.h>
+#include <alloca.h>
 
 #include "ae.h"
 #include "zmalloc.h"
 #include "config.h"
+
+#include <dmtr/libos.h>
 
 /* Include the best multiplexing layer supported by this system.
  * The following should be ordered by performances, descending. */
@@ -60,9 +63,19 @@
     #endif
 #endif
 
+dmtr_latency_t *aePollLatency = NULL;
+dmtr_latency_t *aePushLatency = NULL;
+dmtr_latency_t *aeWaitForPushLatency = NULL;
+
+static void aeDeleteQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt);
+
 aeEventLoop *aeCreateEventLoop(int setsize) {
     aeEventLoop *eventLoop;
     int i;
+
+    if (0 != dmtr_new_latency(&aePollLatency, "redis-poll")) goto err;
+    if (0 != dmtr_new_latency(&aePushLatency, "redis-push")) goto err;
+    if (0 != dmtr_new_latency(&aeWaitForPushLatency, "redis-wait-push")) goto err;
 
     if ((eventLoop = zmalloc(sizeof(*eventLoop))) == NULL) goto err;
     eventLoop->events = zmalloc(sizeof(aeFileEvent)*setsize);
@@ -76,6 +89,7 @@ aeEventLoop *aeCreateEventLoop(int setsize) {
     eventLoop->maxfd = -1;
     eventLoop->beforesleep = NULL;
     eventLoop->aftersleep = NULL;
+    eventLoop->qEvents = NULL;
     if (aeApiCreate(eventLoop) == -1) goto err;
     /* Events with mask == AE_NONE are not set. So let's initialize the
      * vector with it. */
@@ -131,6 +145,98 @@ void aeDeleteEventLoop(aeEventLoop *eventLoop) {
 
 void aeStop(aeEventLoop *eventLoop) {
     eventLoop->stop = 1;
+}
+
+int aeCreateQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt, aeQueueProc *qProc, void *clientData) {
+    if (NULL == eventLoop) {
+        return AE_ERR;
+    }
+
+    if (0 == qt) {
+        return AE_ERR;
+    }
+
+    if (NULL == qProc) {
+        return AE_ERR;
+    }
+
+    //fprintf(stderr, "acCreateQueueEvent(): scheduling event 0x%016lx.\n", qt);
+    aeQueueEvent *e = (aeQueueEvent *)zmalloc(sizeof(struct aeQueueEvent));
+    memset(e, 0, sizeof(*e));
+    e->qt = qt;
+    e->qProc = qProc;
+    e->clientData = clientData;
+    HASH_ADD(hh, eventLoop->qEvents, qt, sizeof(qt), e);
+    return AE_OK;
+}
+
+void aeDeleteQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt) {
+    aeQueueEvent *e = NULL;
+
+    if (NULL == eventLoop) {
+        fprintf(stderr, "`eventLoop` cannot be `NULL`.\n");
+        abort();
+    }
+
+    if (0 == qt) {
+        fprintf(stderr, "aeDeleteQueueEvent: `qt` cannot be zero.\n");
+        abort();
+    }
+
+    //fprintf(stderr, "aeDeleteQueueEvent: deleting qt 0x%016lx.\n", qt);
+
+    HASH_FIND(hh, eventLoop->qEvents, &qt, sizeof(qt), e);
+    if (NULL == e) {
+        return;
+    }
+
+    (void)dmtr_drop(qt);
+    HASH_DEL(eventLoop->qEvents, e);
+    zfree(e);
+}
+
+aeQueueEvent* aeDeleteCompletedQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt) {
+    aeQueueEvent *e = NULL;
+
+    if (NULL == eventLoop) {
+        fprintf(stderr, "`eventLoop` cannot be `NULL`.\n");
+        abort();
+    }
+
+    if (0 == qt) {
+        fprintf(stderr, "aeDeleteQueueEvent: `qt` cannot be zero.\n");
+        abort();
+    }
+
+    //fprintf(stderr, "aeDeleteQueueEvent: deleting qt 0x%016lx.\n", qt);
+
+    HASH_FIND(hh, eventLoop->qEvents, &qt, sizeof(qt), e);
+    if (NULL == e) {
+        return NULL;
+    }
+
+    HASH_DEL(eventLoop->qEvents, e);
+    return e;
+}
+
+void aeDeleteQueueEvents(aeEventLoop *eventLoop, void *clientData) {
+    aeQueueEvent *e, *tmp;
+
+    if (NULL == eventLoop) {
+        fprintf(stderr, "`eventLoop` cannot be `NULL`.\n");
+        abort();
+    }
+
+    //fprintf(stderr, "aeDeleteQueueEvents: deleting all queue events associated with %p.\n", clientData);
+
+    HASH_ITER(hh, eventLoop->qEvents, e, tmp) {
+        if (clientData == e->clientData) {
+            //fprintf(stderr, "aeDeleteQueueEvents: deleting qt 0x%016lx.\n", e->qt);
+            (void)dmtr_drop(e->qt);
+            HASH_DEL(eventLoop->qEvents, e);
+            zfree(e);
+        }
+    }
 }
 
 int aeCreateFileEvent(aeEventLoop *eventLoop, int fd, int mask,
@@ -355,112 +461,144 @@ static int processTimeEvents(aeEventLoop *eventLoop) {
 int aeProcessEvents(aeEventLoop *eventLoop, int flags)
 {
     int processed = 0, numevents;
+    size_t qEventCount;
+
+    qEventCount = HASH_COUNT(eventLoop->qEvents);
 
     /* Nothing to do? return ASAP */
-    if (!(flags & AE_TIME_EVENTS) && !(flags & AE_FILE_EVENTS)) return 0;
+    if (!(flags & AE_TIME_EVENTS) && !(flags & AE_FILE_EVENTS) && 0 == qEventCount) return 0;
+
+    // since we're polling multiple frameworks (demeter, epoll, etc.), we
+    // should never block waiting on anything.
+    flags = flags | AE_DONT_WAIT;
+
+    {
+        dmtr_qresult_t qr;
+        aeQueueEvent *e, *tmp;
+
+        // we poll all known qtokens to avoid starvation.
+        HASH_ITER(hh, eventLoop->qEvents, e, tmp) {
+            int ret = -1;
+            uint64_t t0;
+
+            t0 = dmtr_now_ns();
+            ret = dmtr_poll(&qr, e->qt);
+            if (EAGAIN == ret) {
+                continue;
+            }
+
+            (void)dmtr_record_latency(aePollLatency, dmtr_now_ns() - t0);
+
+	    aeQueueEvent *completedEvent = aeDeleteCompletedQueueEvent(eventLoop, e->qt);
+	    completedEvent->qProc(eventLoop, ret, &qr, completedEvent->clientData);
+	    zfree(completedEvent);
+
+            ++processed;
+        }
+    }
 
     /* Note that we want call select() even if there are no
      * file events to process as long as we want to process time
      * events, in order to sleep until the next time event is ready
      * to fire. */
-    if (eventLoop->maxfd != -1 ||
-        ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) {
-        int j;
-        aeTimeEvent *shortest = NULL;
-        struct timeval tv, *tvp;
+    /* if (eventLoop->maxfd != -1 || */
+    /*     ((flags & AE_TIME_EVENTS) && !(flags & AE_DONT_WAIT))) { */
+    /*     int j; */
+    /*     aeTimeEvent *shortest = NULL; */
+    /*     struct timeval tv, *tvp; */
 
-        if (flags & AE_TIME_EVENTS && !(flags & AE_DONT_WAIT))
-            shortest = aeSearchNearestTimer(eventLoop);
-        if (shortest) {
-            long now_sec, now_ms;
+    /*     if (flags & AE_TIME_EVENTS && !(flags & AE_DONT_WAIT)) */
+    /*         shortest = aeSearchNearestTimer(eventLoop); */
+    /*     if (shortest) { */
+    /*         long now_sec, now_ms; */
 
-            aeGetTime(&now_sec, &now_ms);
-            tvp = &tv;
+    /*         aeGetTime(&now_sec, &now_ms); */
+    /*         tvp = &tv; */
 
-            /* How many milliseconds we need to wait for the next
-             * time event to fire? */
-            long long ms =
-                (shortest->when_sec - now_sec)*1000 +
-                shortest->when_ms - now_ms;
+    /*         /\* How many milliseconds we need to wait for the next */
+    /*          * time event to fire? *\/ */
+    /*         long long ms = */
+    /*             (shortest->when_sec - now_sec)*1000 + */
+    /*             shortest->when_ms - now_ms; */
 
-            if (ms > 0) {
-                tvp->tv_sec = ms/1000;
-                tvp->tv_usec = (ms % 1000)*1000;
-            } else {
-                tvp->tv_sec = 0;
-                tvp->tv_usec = 0;
-            }
-        } else {
-            /* If we have to check for events but need to return
-             * ASAP because of AE_DONT_WAIT we need to set the timeout
-             * to zero */
-            if (flags & AE_DONT_WAIT) {
-                tv.tv_sec = tv.tv_usec = 0;
-                tvp = &tv;
-            } else {
-                /* Otherwise we can block */
-                tvp = NULL; /* wait forever */
-            }
-        }
+    /*         if (ms > 0) { */
+    /*             tvp->tv_sec = ms/1000; */
+    /*             tvp->tv_usec = (ms % 1000)*1000; */
+    /*         } else { */
+    /*             tvp->tv_sec = 0; */
+    /*             tvp->tv_usec = 0; */
+    /*         } */
+    /*     } else { */
+    /*         /\* If we have to check for events but need to return */
+    /*          * ASAP because of AE_DONT_WAIT we need to set the timeout */
+    /*          * to zero *\/ */
+    /*         if (flags & AE_DONT_WAIT) { */
+    /*             tv.tv_sec = tv.tv_usec = 0; */
+    /*             tvp = &tv; */
+    /*         } else { */
+    /*             /\* Otherwise we can block *\/ */
+    /*             tvp = NULL; /\* wait forever *\/ */
+    /*         } */
+    /*     } */
 
-        /* Call the multiplexing API, will return only on timeout or when
-         * some event fires. */
-        numevents = aeApiPoll(eventLoop, tvp);
+    /*     /\* Call the multiplexing API, will return only on timeout or when */
+    /*      * some event fires. *\/ */
+    /*     numevents = aeApiPoll(eventLoop, tvp); */
+        
+    /*     /\* After sleep callback. *\/ */
+    /*     if (eventLoop->aftersleep != NULL && flags & AE_CALL_AFTER_SLEEP) */
+    /*         eventLoop->aftersleep(eventLoop); */
 
-        /* After sleep callback. */
-        if (eventLoop->aftersleep != NULL && flags & AE_CALL_AFTER_SLEEP)
-            eventLoop->aftersleep(eventLoop);
+    /*     for (j = 0; j < numevents; j++) { */
+    /*         aeFileEvent *fe = &eventLoop->events[eventLoop->fired[j].fd]; */
+    /*         int mask = eventLoop->fired[j].mask; */
+    /*         int fd = eventLoop->fired[j].fd; */
+    /*         int fired = 0; /\* Number of events fired for current fd. *\/ */
 
-        for (j = 0; j < numevents; j++) {
-            aeFileEvent *fe = &eventLoop->events[eventLoop->fired[j].fd];
-            int mask = eventLoop->fired[j].mask;
-            int fd = eventLoop->fired[j].fd;
-            int fired = 0; /* Number of events fired for current fd. */
+    /*         /\* Normally we execute the readable event first, and the writable */
+    /*          * event laster. This is useful as sometimes we may be able */
+    /*          * to serve the reply of a query immediately after processing the */
+    /*          * query. */
+    /*          * */
+    /*          * However if AE_BARRIER is set in the mask, our application is */
+    /*          * asking us to do the reverse: never fire the writable event */
+    /*          * after the readable. In such a case, we invert the calls. */
+    /*          * This is useful when, for instance, we want to do things */
+    /*          * in the beforeSleep() hook, like fsynching a file to disk, */
+    /*          * before replying to a client. *\/ */
+    /*         int invert = fe->mask & AE_BARRIER; */
 
-            /* Normally we execute the readable event first, and the writable
-             * event laster. This is useful as sometimes we may be able
-             * to serve the reply of a query immediately after processing the
-             * query.
-             *
-             * However if AE_BARRIER is set in the mask, our application is
-             * asking us to do the reverse: never fire the writable event
-             * after the readable. In such a case, we invert the calls.
-             * This is useful when, for instance, we want to do things
-             * in the beforeSleep() hook, like fsynching a file to disk,
-             * before replying to a client. */
-            int invert = fe->mask & AE_BARRIER;
+	/*     /\* Note the "fe->mask & mask & ..." code: maybe an already */
+    /*          * processed event removed an element that fired and we still */
+    /*          * didn't processed, so we check if the event is still valid. */
+    /*          * */
+    /*          * Fire the readable event if the call sequence is not */
+    /*          * inverted. *\/ */
+    /*         if (!invert && fe->mask & mask & AE_READABLE) { */
+    /*             fe->rfileProc(eventLoop,fd,fe->clientData,mask); */
+    /*             fired++; */
+    /*         } */
 
-	    /* Note the "fe->mask & mask & ..." code: maybe an already
-             * processed event removed an element that fired and we still
-             * didn't processed, so we check if the event is still valid.
-             *
-             * Fire the readable event if the call sequence is not
-             * inverted. */
-            if (!invert && fe->mask & mask & AE_READABLE) {
-                fe->rfileProc(eventLoop,fd,fe->clientData,mask);
-                fired++;
-            }
+    /*         /\* Fire the writable event. *\/ */
+    /*         if (fe->mask & mask & AE_WRITABLE) { */
+    /*             if (!fired || fe->wfileProc != fe->rfileProc) { */
+    /*                 fe->wfileProc(eventLoop,fd,fe->clientData,mask); */
+    /*                 fired++; */
+    /*             } */
+    /*         } */
 
-            /* Fire the writable event. */
-            if (fe->mask & mask & AE_WRITABLE) {
-                if (!fired || fe->wfileProc != fe->rfileProc) {
-                    fe->wfileProc(eventLoop,fd,fe->clientData,mask);
-                    fired++;
-                }
-            }
+    /*         /\* If we have to invert the call, fire the readable event now */
+    /*          * after the writable one. *\/ */
+    /*         if (invert && fe->mask & mask & AE_READABLE) { */
+    /*             if (!fired || fe->wfileProc != fe->rfileProc) { */
+    /*                 fe->rfileProc(eventLoop,fd,fe->clientData,mask); */
+    /*                 fired++; */
+    /*             } */
+    /*         } */
 
-            /* If we have to invert the call, fire the readable event now
-             * after the writable one. */
-            if (invert && fe->mask & mask & AE_READABLE) {
-                if (!fired || fe->wfileProc != fe->rfileProc) {
-                    fe->rfileProc(eventLoop,fd,fe->clientData,mask);
-                    fired++;
-                }
-            }
-
-            processed++;
-        }
-    }
+    /*         processed++; */
+    /*     } */
+    /* } */
     /* Check time events */
     if (flags & AE_TIME_EVENTS)
         processed += processTimeEvents(eventLoop);

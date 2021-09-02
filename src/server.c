@@ -56,6 +56,10 @@
 #include <locale.h>
 #include <sys/socket.h>
 
+#include <dmtr/libos.h>
+#include <dmtr/annot.h>
+#include <dmtr/latency.h>
+
 /* Our shared "common" objects */
 
 struct sharedObjectsStruct shared;
@@ -1112,10 +1116,12 @@ int serverCron(struct aeEventLoop *eventLoop, long long id, void *clientData) {
             long long base = server.aof_rewrite_base_size ?
                             server.aof_rewrite_base_size : 1;
             long long growth = (server.aof_current_size*100/base) - 100;
+            // irene/libspdk: turn off log file re-write here
+            /**
             if (growth >= server.aof_rewrite_perc) {
                 serverLog(LL_NOTICE,"Starting automatic rewriting of AOF on %lld%% growth",growth);
                 rewriteAppendOnlyFileBackground();
-            }
+                }**/
          }
     }
 
@@ -1219,7 +1225,8 @@ void beforeSleep(struct aeEventLoop *eventLoop) {
 
     /* Check if there are clients unblocked by modules that implement
      * blocking commands. */
-    moduleHandleBlockedClients();
+    // Irene; no idea why I had to comment this out for things to work
+    //moduleHandleBlockedClients();
 
     /* Try to process pending commands for clients that were just unblocked. */
     if (listLength(server.unblocked_clients))
@@ -1924,12 +1931,20 @@ void initServer(void) {
     /* Create an event handler for accepting new connections in TCP and Unix
      * domain sockets. */
     for (j = 0; j < server.ipfd_count; j++) {
-        if (aeCreateFileEvent(server.el, server.ipfd[j], AE_READABLE,
+        int ret;
+        dmtr_qtoken_t qt;
+
+        ret = dmtr_accept(&qt, server.ipfd[j]);
+        if (0 != ret) {
+            serverPanic("Unrecoverable error starting accept operation.");
+        }
+
+        if (aeCreateQueueEvent(server.el, qt,
             acceptTcpHandler,NULL) == AE_ERR)
-            {
-                serverPanic(
-                    "Unrecoverable error creating server.ipfd file event.");
-            }
+        {
+            serverPanic(
+                "Unrecoverable error creating server.ipfd queue event.");
+        }
     }
     if (server.sofd > 0 && aeCreateFileEvent(server.el,server.sofd,AE_READABLE,
         acceptUnixHandler,NULL) == AE_ERR) serverPanic("Unrecoverable error creating server.sofd file event.");
@@ -1946,8 +1961,17 @@ void initServer(void) {
 
     /* Open the AOF file if needed. */
     if (server.aof_state == AOF_ON) {
-        server.aof_fd = open(server.aof_filename,
-                               O_WRONLY|O_APPEND|O_CREAT,0644);
+#ifdef DMTR_OPEN2
+        // irene/spdk: open dmtr file queue
+        fprintf(stderr, "LIBOSSPDK: server.c/initServer, will call open %s\n", server.aof_filename);
+        int ret = dmtr_open2(&server.aof_fd, server.aof_filename, O_WRONLY | O_CREAT, 0644);
+        if (0 != ret) {
+            serverPanic("Unable to open log file.");
+        }
+        fprintf(stderr, "LIBOSSPDK: aof_fd:%d\n", server.aof_fd);
+#else
+        server.aof_fd = open(server.aof_filename, O_WRONLY|O_APPEND|O_CREAT,0644);
+#endif
         if (server.aof_fd == -1) {
             serverLog(LL_WARNING, "Can't open the append-only file: %s",
                 strerror(errno));
@@ -2567,6 +2591,7 @@ int prepareForShutdown(int flags) {
         /* Append only file: flush buffers and fsync() the AOF at exit */
         serverLog(LL_NOTICE,"Calling fsync() on the AOF file.");
         flushAppendOnlyFile(1);
+        fprintf(stderr, "LIBOSSPDK prepareForShutdown will aof_fsync\n");
         aof_fsync(server.aof_fd);
     }
 
@@ -2601,6 +2626,19 @@ int prepareForShutdown(int flags) {
     closeListeningSockets(1);
     serverLog(LL_WARNING,"%s is now ready to exit, bye bye...",
         server.sentinel_mode ? "Sentinel" : "Redis");
+
+    if (NULL != aePollLatency) {
+        dmtr_dump_latency(stderr, aePollLatency);
+        dmtr_dump_latency(stderr, aePushLatency);
+        dmtr_dump_latency(stderr, aeWaitForPushLatency);
+        // todo: the following seems to cause a crash-- don't understand why.
+#if 0
+        dmtr_delete_latency(aePollLatency);
+        dmtr_delete_latency(aePushLatency);
+        dmtr_delete_latency(aeWaitForPushLatency);
+#endif
+    }
+
     return C_OK;
 }
 
@@ -3704,6 +3742,7 @@ int redisIsSupervised(int mode) {
 int main(int argc, char **argv) {
     struct timeval tv;
     int j;
+    int ret;
 
 #ifdef REDIS_TEST
     if (argc == 3 && !strcasecmp(argv[1], "test")) {
@@ -3730,6 +3769,12 @@ int main(int argc, char **argv) {
         return -1; /* test not found */
     }
 #endif
+
+    ret = dmtr_init(0, NULL);
+    if (ret != 0) {
+        fprintf(stderr, "Failed to initialize Demeter.\n");
+        return ret;
+    }
 
     /* We need to initialize our libraries, and the server configuration. */
 #ifdef INIT_SETPROCTITLE_REPLACEMENT

@@ -11,6 +11,10 @@
 #
 # Dependencies are stored in the Makefile.dep file. To rebuild this file
 # Just use 'make dep', but this is only needed by developers.
+#
+ifndef ZEUS_SRC_DIR
+	ZEUS_SRC_DIR=${HOME}/datacenter-OS/
+endif
 
 release_hdr := $(shell sh -c './mkreleasehdr.sh')
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
@@ -18,6 +22,7 @@ uname_M := $(shell sh -c 'uname -m 2>/dev/null || echo not')
 OPTIMIZATION?=-O2
 DEPENDENCY_TARGETS=hiredis linenoise lua
 NODEPS:=clean distclean
+#$(info $$CC is [${CC}])
 
 # Default settings
 STD=-std=c99 -pedantic -DREDIS_STATIC=''
@@ -63,10 +68,20 @@ endif
 # Override default settings if possible
 -include .make-settings
 
+ZEUS_CFLAGS := -I$(DEMETER_INCLUDE)
+ZEUS_LDFLAGS := -L$(dir $(DEMETER_LIBOS_SO)) -Wl,-rpath,$(dir $(DEMETER_LIBOS_SO)) -L$(dir $(DEMETER_LATENCY_A)) -L$(dir $(DEMETER_COMMON_A)) -L$(dir $(DEMETER_BASE_A))
+
 FINAL_CFLAGS=$(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS) $(REDIS_CFLAGS)
 FINAL_LDFLAGS=$(LDFLAGS) $(REDIS_LDFLAGS) $(DEBUG)
 FINAL_LIBS=-lm
 DEBUG=-g -ggdb
+
+ZEUS_LIBS := -l:$(notdir $(DEMETER_LIBOS_SO)) -l:$(notdir $(DEMETER_LATENCY_A) ) -l:$(notdir $(DEMETER_COMMON_A)) -l:$(notdir $(DEMETER_BASE_A)) -lboost_chrono -lboost_system -lstdc++
+FINAL_CFLAGS += $(ZEUS_CFLAGS)
+FINAL_LDFLAGS += $(ZEUS_LDFLAGS)
+FINAL_LDFLAGS += $(DPDK_LDFLAGS)
+FINAL_LIBS += $(ZEUS_LIBS)
+
 
 ifeq ($(uname_S),SunOS)
 	# SunOS
@@ -125,9 +140,17 @@ ifeq ($(MALLOC),jemalloc)
 	FINAL_LIBS+= ../deps/jemalloc/lib/libjemalloc.a
 endif
 
+# if $(MALLOC) contains a pathname to a file that exists, link against it.
+# todo: we should install this library rather than use `rpath` to find it.
+ifneq (,$(wildcard $(MALLOC)))
+	FINAL_LDFLAGS+= -L$(dir $(MALLOC)) -Wl,-rpath,$(dir $(MALLOC))
+	FINAL_LIBS+= -l:$(notdir $(MALLOC))
+endif
+
 REDIS_CC=$(QUIET_CC)$(CC) $(FINAL_CFLAGS)
 REDIS_LD=$(QUIET_LINK)$(CC) $(FINAL_LDFLAGS)
 REDIS_INSTALL=$(QUIET_INSTALL)$(INSTALL)
+
 
 CCCOLOR="\033[34m"
 LINKCOLOR="\033[34;1m"
@@ -152,7 +175,8 @@ REDIS_BENCHMARK_OBJ=ae.o anet.o redis-benchmark.o adlist.o zmalloc.o redis-bench
 REDIS_CHECK_RDB_NAME=redis-check-rdb
 REDIS_CHECK_AOF_NAME=redis-check-aof
 
-all: $(REDIS_SERVER_NAME) $(REDIS_SENTINEL_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME) $(REDIS_CHECK_RDB_NAME) $(REDIS_CHECK_AOF_NAME)
+#all: $(REDIS_SERVER_NAME) $(REDIS_SENTINEL_NAME) $(REDIS_CLI_NAME) $(REDIS_BENCHMARK_NAME) $(REDIS_CHECK_RDB_NAME) $(REDIS_CHECK_AOF_NAME)
+all: $(REDIS_SERVER_NAME) $(REDIS_SENTINEL_NAME) $(REDIS_BENCHMARK_NAME) $(REDIS_CHECK_RDB_NAME) $(REDIS_CHECK_AOF_NAME)
 	@echo ""
 	@echo "Hint: It's a good idea to run 'make test' ;)"
 	@echo ""
@@ -286,7 +310,7 @@ install: all
 	@mkdir -p $(INSTALL_BIN)
 	$(REDIS_INSTALL) $(REDIS_SERVER_NAME) $(INSTALL_BIN)
 	$(REDIS_INSTALL) $(REDIS_BENCHMARK_NAME) $(INSTALL_BIN)
-	$(REDIS_INSTALL) $(REDIS_CLI_NAME) $(INSTALL_BIN)
+#	$(REDIS_INSTALL) $(REDIS_CLI_NAME) $(INSTALL_BIN)
 	$(REDIS_INSTALL) $(REDIS_CHECK_RDB_NAME) $(INSTALL_BIN)
 	$(REDIS_INSTALL) $(REDIS_CHECK_AOF_NAME) $(INSTALL_BIN)
 	@ln -sf $(REDIS_SERVER_NAME) $(INSTALL_BIN)/$(REDIS_SENTINEL_NAME)

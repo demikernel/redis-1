@@ -45,8 +45,14 @@
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "anet.h"
+
+#include <dmtr/libos.h>
+#include <dmtr/sga.h>
+
+#define UNUSED(x) (void)(x)
 
 static void anetSetError(char *err, const char *fmt, ...)
 {
@@ -60,13 +66,24 @@ static void anetSetError(char *err, const char *fmt, ...)
 
 int anetSetBlock(char *err, int fd, int non_block) {
     int flags;
+    int ret, flag;
+
+    ret = dmtr_is_qd_valid(&flag, fd);
+    if (ret != 0) {
+        fprintf(stderr, "failure to validate qd.\n");
+        abort();
+    }
+
+    if (flag) {
+        return ANET_OK;
+    }
 
     /* Set the socket blocking (if non_block is zero) or non-blocking.
      * Note that fcntl(2) for F_GETFL and F_SETFL can't be
      * interrupted by a signal. */
     if ((flags = fcntl(fd, F_GETFL)) == -1) {
         anetSetError(err, "fcntl(F_GETFL): %s", strerror(errno));
-        return ANET_ERR;
+        return ANET_OK;
     }
 
     if (non_block)
@@ -78,6 +95,7 @@ int anetSetBlock(char *err, int fd, int non_block) {
         anetSetError(err, "fcntl(F_SETFL,O_NONBLOCK): %s", strerror(errno));
         return ANET_ERR;
     }
+
     return ANET_OK;
 }
 
@@ -95,6 +113,17 @@ int anetBlock(char *err, int fd) {
 int anetKeepAlive(char *err, int fd, int interval)
 {
     int val = 1;
+    int ret, flag;
+
+    ret = dmtr_is_qd_valid(&flag, fd);
+    if (ret != 0) {
+        fprintf(stderr, "failure to validate qd.\n");
+        abort();
+    }
+
+    if (flag) {
+        return ANET_OK;
+    }
 
     if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &val, sizeof(val)) == -1)
     {
@@ -140,6 +169,18 @@ int anetKeepAlive(char *err, int fd, int interval)
 
 static int anetSetTcpNoDelay(char *err, int fd, int val)
 {
+    int ret, flag;
+
+    ret = dmtr_is_qd_valid(&flag, fd);
+    if (ret != 0) {
+        fprintf(stderr, "failure to validate qd.\n");
+        abort();
+    }
+
+    if (flag) {
+        return ANET_OK;
+    }
+
     if (setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &val, sizeof(val)) == -1)
     {
         anetSetError(err, "setsockopt TCP_NODELAY: %s", strerror(errno));
@@ -161,21 +202,47 @@ int anetDisableTcpNoDelay(char *err, int fd)
 
 int anetSetSendBuffer(char *err, int fd, int buffsize)
 {
+    int ret, flag;
+
+    ret = dmtr_is_qd_valid(&flag, fd);
+    if (ret != 0) {
+        fprintf(stderr, "failure to validate qd.\n");
+        abort();
+    }
+
+    if (flag) {
+        return ANET_OK;
+    }
+
     if (setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &buffsize, sizeof(buffsize)) == -1)
     {
         anetSetError(err, "setsockopt SO_SNDBUF: %s", strerror(errno));
         return ANET_ERR;
     }
+
     return ANET_OK;
 }
 
 int anetTcpKeepAlive(char *err, int fd)
 {
     int yes = 1;
+    int ret, flag;
+
+    ret = dmtr_is_qd_valid(&flag, fd);
+    if (ret != 0) {
+        fprintf(stderr, "failure to validate qd.\n");
+        abort();
+    }
+
+    if (flag) {
+        return ANET_OK;
+    }
+
     if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &yes, sizeof(yes)) == -1) {
         anetSetError(err, "setsockopt SO_KEEPALIVE: %s", strerror(errno));
         return ANET_ERR;
     }
+
     return ANET_OK;
 }
 
@@ -183,6 +250,17 @@ int anetTcpKeepAlive(char *err, int fd)
  * number of milliseconds, or disable it if the 'ms' argument is zero. */
 int anetSendTimeout(char *err, int fd, long long ms) {
     struct timeval tv;
+    int ret, flag;
+
+    ret = dmtr_is_qd_valid(&flag, fd);
+    if (ret != 0) {
+        fprintf(stderr, "failure to validate qd.\n");
+        abort();
+    }
+
+    if (flag) {
+        return ANET_OK;
+    }
 
     tv.tv_sec = ms/1000;
     tv.tv_usec = (ms%1000)*1000;
@@ -190,6 +268,7 @@ int anetSendTimeout(char *err, int fd, long long ms) {
         anetSetError(err, "setsockopt SO_SNDTIMEO: %s", strerror(errno));
         return ANET_ERR;
     }
+
     return ANET_OK;
 }
 
@@ -237,26 +316,40 @@ int anetResolveIP(char *err, char *host, char *ipbuf, size_t ipbuf_len) {
 
 static int anetSetReuseAddr(char *err, int fd) {
     int yes = 1;
+    int ret, flag;
+
+    ret = dmtr_is_qd_valid(&flag, fd);
+    if (ret != 0) {
+        fprintf(stderr, "failure to validate qd.\n");
+        abort();
+    }
+
+    if (flag) {
+        return ANET_OK;
+    }
+
     /* Make sure connection-intensive things like the redis benckmark
      * will be able to close/open sockets a zillion of times */
-    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
-        anetSetError(err, "setsockopt SO_REUSEADDR: %s", strerror(errno));
-        return ANET_ERR;
-    }
+    // if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(yes)) == -1) {
+    //     anetSetError(err, "setsockopt SO_REUSEADDR: %s", strerror(errno));
+    //     return ANET_ERR;
+    // }
+
     return ANET_OK;
 }
 
 static int anetCreateSocket(char *err, int domain) {
-    int s;
-    if ((s = socket(domain, SOCK_STREAM, 0)) == -1) {
-        anetSetError(err, "creating socket: %s", strerror(errno));
+    int s, ret;
+    ret = dmtr_socket(&s, domain, SOCK_STREAM, 0);
+    if (0 != ret) {
+        anetSetError(err, "creating socket: %s", strerror(ret));
         return ANET_ERR;
     }
 
     /* Make sure connection-intensive things like the redis benchmark
      * will be able to close/open sockets a zillion of times */
     if (anetSetReuseAddr(err,s) == ANET_ERR) {
-        close(s);
+        dmtr_close(s);
         return ANET_ERR;
     }
     return s;
@@ -282,10 +375,13 @@ static int anetTcpGenericConnect(char *err, char *addr, int port,
         return ANET_ERR;
     }
     for (p = servinfo; p != NULL; p = p->ai_next) {
+        int ret;
+
         /* Try to create the socket and to connect it.
          * If we fail in the socket() call, or on connect(), we retry with
          * the next entry in servinfo. */
-        if ((s = socket(p->ai_family,p->ai_socktype,p->ai_protocol)) == -1)
+        ret = dmtr_socket(&s,p->ai_family,p->ai_socktype,p->ai_protocol);
+        if (0 != ret)
             continue;
         if (anetSetReuseAddr(err,s) == ANET_ERR) goto error;
         if (flags & ANET_CONNECT_NONBLOCK && anetNonBlock(err,s) != ANET_OK)
@@ -299,7 +395,7 @@ static int anetTcpGenericConnect(char *err, char *addr, int port,
                 goto error;
             }
             for (b = bservinfo; b != NULL; b = b->ai_next) {
-                if (bind(s,b->ai_addr,b->ai_addrlen) != -1) {
+                if (dmtr_bind(s,b->ai_addr,b->ai_addrlen) == 0) {
                     bound = 1;
                     break;
                 }
@@ -310,12 +406,17 @@ static int anetTcpGenericConnect(char *err, char *addr, int port,
                 goto error;
             }
         }
-        if (connect(s,p->ai_addr,p->ai_addrlen) == -1) {
+        dmtr_qtoken_t qt;
+        ret = dmtr_connect(&qt,s,p->ai_addr,p->ai_addrlen);
+        if (0 == ret) {
+            ret = dmtr_wait(NULL, qt);
+        }
+        if (ret != 0) {
             /* If the socket is non-blocking, it is ok for connect() to
              * return an EINPROGRESS error here. */
-            if (errno == EINPROGRESS && flags & ANET_CONNECT_NONBLOCK)
+            if (ret == EINPROGRESS && flags & ANET_CONNECT_NONBLOCK)
                 goto end;
-            close(s);
+            dmtr_close(s);
             s = ANET_ERR;
             continue;
         }
@@ -329,7 +430,7 @@ static int anetTcpGenericConnect(char *err, char *addr, int port,
 
 error:
     if (s != ANET_ERR) {
-        close(s);
+        dmtr_close(s);
         s = ANET_ERR;
     }
 
@@ -371,7 +472,7 @@ int anetTcpNonBlockBestEffortBindConnect(char *err, char *addr, int port,
 
 int anetUnixGenericConnect(char *err, char *path, int flags)
 {
-    int s;
+    int s, ret;
     struct sockaddr_un sa;
 
     if ((s = anetCreateSocket(err,AF_LOCAL)) == ANET_ERR)
@@ -381,17 +482,22 @@ int anetUnixGenericConnect(char *err, char *path, int flags)
     strncpy(sa.sun_path,path,sizeof(sa.sun_path)-1);
     if (flags & ANET_CONNECT_NONBLOCK) {
         if (anetNonBlock(err,s) != ANET_OK) {
-            close(s);
+            dmtr_close(s);
             return ANET_ERR;
         }
     }
-    if (connect(s,(struct sockaddr*)&sa,sizeof(sa)) == -1) {
-        if (errno == EINPROGRESS &&
+    dmtr_qtoken_t qt;
+    ret = dmtr_connect(&qt, s,(struct sockaddr*)&sa,sizeof(sa));
+    if (0 == ret) {
+        dmtr_wait(NULL, qt);
+    }
+    if (ret != 0) {
+        if (ret == EINPROGRESS &&
             flags & ANET_CONNECT_NONBLOCK)
             return s;
 
-        anetSetError(err, "connect: %s", strerror(errno));
-        close(s);
+        anetSetError(err, "connect: %s", strerror(ret));
+        dmtr_close(s);
         return ANET_ERR;
     }
     return s;
@@ -409,57 +515,102 @@ int anetUnixNonBlockConnect(char *err, char *path)
 
 /* Like read(2) but make sure 'count' is read before to return
  * (unless error or EOF condition is encountered) */
-int anetRead(int fd, char *buf, int count)
+int anetRead(int qd, char *buf, int count)
 {
-    ssize_t nread, totlen = 0;
-    while(totlen != count) {
-        nread = read(fd,buf,count-totlen);
-        if (nread == 0) return totlen;
-        if (nread == -1) return -1;
-        totlen += nread;
-        buf += nread;
+    ssize_t totlen = 0;
+    dmtr_qtoken_t qt;
+    dmtr_qresult_t qr;
+    int ret;
+
+    ret = dmtr_pop(&qt, qd);
+    if (0 != ret) {
+        return -1;
     }
+
+    ret = dmtr_wait(&qr, qt);
+    if (0 != ret) {
+        return -1;
+    }
+
+    if (qr.qr_value.sga.sga_numsegs != 1) {
+        fprintf(stderr, "unable to process sga of size > 1");
+        abort();
+    }
+
+    totlen = qr.qr_value.sga.sga_segs[0].sgaseg_len;
+    if (totlen > count) {
+        fprintf(stderr, "sga segment is too big");
+        abort();
+    }
+
+    if (totlen < count) {
+        count = totlen;
+    }
+
+    memcpy(buf, qr.qr_value.sga.sga_segs[0].sgaseg_buf, count);
+    dmtr_sgafree(&qr.qr_value.sga);
     return totlen;
 }
 
 /* Like write(2) but make sure 'count' is written before to return
  * (unless error is encountered) */
-int anetWrite(int fd, char *buf, int count)
+int anetWrite(int qd, char *buf, int count)
 {
-    ssize_t nwritten, totlen = 0;
-    while(totlen != count) {
-        nwritten = write(fd,buf,count-totlen);
-        if (nwritten == 0) return totlen;
-        if (nwritten == -1) return -1;
-        totlen += nwritten;
-        buf += nwritten;
+    dmtr_sgarray_t sga;
+    dmtr_qtoken_t qt;
+    dmtr_qresult_t qr;
+    int ret;
+
+    memset(&sga, 0, sizeof(sga));
+    sga.sga_numsegs = 1;
+    sga.sga_segs[0].sgaseg_buf = buf;
+    sga.sga_segs[0].sgaseg_len = count;
+    ret = dmtr_push(&qt, qd, &sga);
+    if (0 != ret) {
+        return -1;
     }
-    return totlen;
+
+    ret = dmtr_wait(&qr, qt);
+    if (0 != ret) {
+        return -1;
+    }
+
+    return count;
 }
 
 static int anetListen(char *err, int s, struct sockaddr *sa, socklen_t len, int backlog) {
-    if (bind(s,sa,len) == -1) {
-        anetSetError(err, "bind: %s", strerror(errno));
-        close(s);
+    int ret;
+
+    ret = dmtr_bind(s,sa,len);
+    if (ret != 0) {
+        anetSetError(err, "bind: %s", strerror(ret));
+        dmtr_close(s);
         return ANET_ERR;
     }
 
-    if (listen(s, backlog) == -1) {
-        anetSetError(err, "listen: %s", strerror(errno));
-        close(s);
+    ret = dmtr_listen(s, backlog);
+    if (ret != 0) {
+        anetSetError(err, "listen: %s", strerror(ret));
+        dmtr_close(s);
         return ANET_ERR;
     }
     return ANET_OK;
 }
 
 static int anetV6Only(char *err, int s) {
+#if 0
     int yes = 1;
     if (setsockopt(s,IPPROTO_IPV6,IPV6_V6ONLY,&yes,sizeof(yes)) == -1) {
         anetSetError(err, "setsockopt: %s", strerror(errno));
-        close(s);
+        dmtr_close(s);
         return ANET_ERR;
     }
     return ANET_OK;
+#else
+    UNUSED(err);
+    UNUSED(s);
+    return ANET_ERR;
+#endif
 }
 
 static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backlog)
@@ -479,12 +630,21 @@ static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backl
         return ANET_ERR;
     }
     for (p = servinfo; p != NULL; p = p->ai_next) {
-        if ((s = socket(p->ai_family,p->ai_socktype,p->ai_protocol)) == -1)
+        int ret;
+
+        ret = dmtr_socket(&s,p->ai_family,p->ai_socktype,p->ai_protocol);
+        if (ret != 0)
             continue;
 
-        if (af == AF_INET6 && anetV6Only(err,s) == ANET_ERR) goto error;
-        if (anetSetReuseAddr(err,s) == ANET_ERR) goto error;
-        if (anetListen(err,s,p->ai_addr,p->ai_addrlen,backlog) == ANET_ERR) s = ANET_ERR;
+        if (af == AF_INET6 && anetV6Only(err,s) == ANET_ERR) {
+            goto error;
+        }
+        if (anetSetReuseAddr(err,s) == ANET_ERR) {
+            goto error;
+        }
+        if (anetListen(err,s,p->ai_addr,p->ai_addrlen,backlog) == ANET_ERR) {
+            s = ANET_ERR;
+        }
         goto end;
     }
     if (p == NULL) {
@@ -493,7 +653,7 @@ static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backl
     }
 
 error:
-    if (s != -1) close(s);
+    if (s != -1) dmtr_close(s);
     s = ANET_ERR;
 end:
     freeaddrinfo(servinfo);
@@ -507,7 +667,15 @@ int anetTcpServer(char *err, int port, char *bindaddr, int backlog)
 
 int anetTcp6Server(char *err, int port, char *bindaddr, int backlog)
 {
+#if 0
     return _anetTcpServer(err, port, bindaddr, AF_INET6, backlog);
+#else
+    UNUSED(err);
+    UNUSED(port);
+    UNUSED(bindaddr);
+    UNUSED(backlog);
+    return ANET_ERR;
+#endif
 }
 
 int anetUnixServer(char *err, char *path, mode_t perm, int backlog)
@@ -529,20 +697,40 @@ int anetUnixServer(char *err, char *path, mode_t perm, int backlog)
 }
 
 static int anetGenericAccept(char *err, int s, struct sockaddr *sa, socklen_t *len) {
-    int fd;
-    while(1) {
-        fd = accept(s,sa,len);
-        if (fd == -1) {
-            if (errno == EINTR)
-                continue;
-            else {
-                anetSetError(err, "accept: %s", strerror(errno));
-                return ANET_ERR;
-            }
-        }
-        break;
+    dmtr_qtoken_t qt = 0;
+    int ret;
+    dmtr_qresult_t qr;
+
+    ret = dmtr_accept(&qt, s);
+    if (ret != 0) {
+        anetSetError(err, "accept: %s", strerror(ret));
+        return ANET_ERR;
     }
-    return fd;
+
+    memset(&qr, 0, sizeof(qr));
+    while(0 == qr.qr_value.ares.qd) {
+        ret = dmtr_wait(&qr, qt);
+        switch (ret) {
+            default:
+                anetSetError(err, "accept: %s", strerror(ret));
+                return ANET_ERR;
+            case 0:
+                break;
+            case EAGAIN:
+            case EINTR:
+                continue;
+        }
+    }
+
+    if (sa != NULL) {
+        if (NULL == len || *len < sizeof(qr.qr_value.ares.addr)) {
+            return ANET_ERR;
+        }
+
+        memcpy(sa, &qr.qr_value.ares.addr, sizeof(qr.qr_value.ares.addr));
+    }
+
+    return qr.qr_value.ares.qd;
 }
 
 int anetTcpAccept(char *err, int s, char *ip, size_t ip_len, int *port) {

@@ -38,6 +38,8 @@
 #include <ctype.h>
 #include <math.h>
 
+#include <dmtr/libos.h>
+
 char *redisProtocolToLuaType_Int(lua_State *lua, char *reply);
 char *redisProtocolToLuaType_Bulk(lua_State *lua, char *reply);
 char *redisProtocolToLuaType_Status(lua_State *lua, char *reply);
@@ -1354,10 +1356,19 @@ void evalGenericCommand(client *c, int evalsha) {
     /* Perform some cleanup that we need to do both on error and success. */
     if (delhook) lua_sethook(lua,NULL,0,0); /* Disable hook */
     if (server.lua_timedout) {
+        int ret;
+        dmtr_qtoken_t qt = 0;
+
         server.lua_timedout = 0;
         /* Restore the readable handler that was unregistered when the
          * script timeout was detected. */
-        aeCreateFileEvent(server.el,c->fd,AE_READABLE,
+        ret = dmtr_pop(&qt, c->fd);
+        if (ret != 0) {
+            fprintf(stderr, "failed to issue `pop` operation\n");
+            abort();
+        }
+
+        aeCreateQueueEvent(server.el,qt,
                           readQueryFromClient,c);
     }
     server.lua_caller = NULL;

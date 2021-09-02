@@ -337,7 +337,7 @@ static int redisAeAttach(aeEventLoop *loop, redisAsyncContext *ac) {
     e = (redisAeEvents*)zmalloc(sizeof(*e));
     e->context = ac;
     e->loop = loop;
-    e->fd = c->fd;
+    e->fd = c->qd;
     e->reading = e->writing = 0;
 
     /* Register functions to start/stop listening for events */
@@ -2478,7 +2478,7 @@ int sentinelSendHello(sentinelRedisInstance *ri) {
     if (sentinel.announce_ip) {
         announce_ip = sentinel.announce_ip;
     } else {
-        if (anetSockName(ri->link->cc->c.fd,ip,sizeof(ip),NULL) == -1)
+        if (anetSockName(ri->link->cc->c.qd,ip,sizeof(ip),NULL) == -1)
             return C_ERR;
         announce_ip = ip;
     }

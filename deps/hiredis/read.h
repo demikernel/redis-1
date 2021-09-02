@@ -34,6 +34,8 @@
 #define __HIREDIS_READ_H
 #include <stdio.h> /* for size_t */
 
+#include <dmtr/types.h>
+
 #define REDIS_ERR -1
 #define REDIS_OK 0
 
@@ -97,7 +99,7 @@ typedef struct redisReader {
 /* Public API for the protocol parser. */
 redisReader *redisReaderCreateWithFunctions(redisReplyObjectFunctions *fn);
 void redisReaderFree(redisReader *r);
-int redisReaderFeed(redisReader *r, const char *buf, size_t len);
+int redisReaderFeed(redisReader *r, const dmtr_sgarray_t *sga);
 int redisReaderGetReply(redisReader *r, void **reply);
 
 #define redisReaderSetPrivdata(_r, _p) (int)(((redisReader*)(_r))->privdata = (_p))

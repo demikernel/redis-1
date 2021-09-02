@@ -46,6 +46,9 @@
 #include "adlist.h"
 #include "zmalloc.h"
 
+#include <dmtr/libos.h>
+#include <dmtr/sga.h>
+
 #define UNUSED(V) ((void) V)
 #define RANDPTR_INITIAL_SIZE 8
 
@@ -98,8 +101,9 @@ typedef struct _client {
 } *client;
 
 /* Prototypes */
-static void writeHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+static void writeHandler(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *privdata);
 static void createMissingClients(client c);
+static void writeNextRequest(client c);
 
 /* Implementation */
 static long long ustime(void) {
@@ -124,8 +128,7 @@ static long long mstime(void) {
 
 static void freeClient(client c) {
     listNode *ln;
-    aeDeleteFileEvent(config.el,c->context->fd,AE_WRITABLE);
-    aeDeleteFileEvent(config.el,c->context->fd,AE_READABLE);
+    aeDeleteQueueEvents(config.el,c);
     redisFree(c->context);
     sdsfree(c->obuf);
     zfree(c->randptr);
@@ -147,11 +150,10 @@ static void freeAllClients(void) {
 }
 
 static void resetClient(client c) {
-    aeDeleteFileEvent(config.el,c->context->fd,AE_WRITABLE);
-    aeDeleteFileEvent(config.el,c->context->fd,AE_READABLE);
-    aeCreateFileEvent(config.el,c->context->fd,AE_WRITABLE,writeHandler,c);
+    aeDeleteQueueEvents(config.el,c);
     c->written = 0;
     c->pending = config.pipeline;
+    writeNextRequest(c);
 }
 
 static void randomizeClientKey(client c) {
@@ -186,22 +188,39 @@ static void clientDone(client c) {
     }
 }
 
-static void readHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
+static void readHandler(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *privdata) {
     client c = privdata;
     void *reply = NULL;
     UNUSED(el);
-    UNUSED(fd);
-    UNUSED(mask);
+
+    if (NULL == qr) {
+        fprintf(stderr, "`qr` is `NULL`\n");
+        abort();
+    }
+
+    switch (code) {
+    default:
+        fprintf(stderr, "readHandler(): failure to complete operation (completion code %d)\n", code);
+        return;
+    case ECONNABORTED:
+        freeClient(c);
+        return;
+    case 0:
+        break;
+    }
+
+    //fprintf(stderr, "readHandler(): completing qt 0x%016lx.\n", qr->qr_qt);
 
     /* Calculate latency only for the first read event. This means that the
      * server already sent the reply and we need to parse it. Parsing overhead
      * is not part of the latency, so calculate it only once, here. */
     if (c->latency < 0) c->latency = ustime()-(c->start);
 
-    if (redisBufferRead(c->context) != REDIS_OK) {
+    if (redisReaderFeed(c->context->reader,&qr->qr_value.sga) != REDIS_OK) {
         fprintf(stderr,"Error: %s\n",c->context->errstr);
         exit(1);
     } else {
+        dmtr_sgafree(&qr->qr_value.sga);
         while(c->pending) {
             if (redisGetReply(c->context,&reply) != REDIS_OK) {
                 fprintf(stderr,"Error: %s\n",c->context->errstr);
@@ -255,11 +274,51 @@ static void readHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
 }
 
-static void writeHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
-    client c = privdata;
+static void writeHandler(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *privdata) {
     UNUSED(el);
-    UNUSED(fd);
-    UNUSED(mask);
+    client c = privdata;
+    int ret;
+    dmtr_qtoken_t qt = 0;
+
+    if (NULL == qr) {
+        fprintf(stderr, "`qr` should not be `NULL`.\n");
+        abort();
+    }
+
+    switch (code) {
+        default:
+            fprintf(stderr, "writeHandler(): failure to complete operation (completion code %d)\n", code);
+            return;
+        case ECONNABORTED:
+            freeClient(c);
+            return;
+        case 0:
+            break;
+    }
+
+    //fprintf(stderr, "writeHandler(): completing qt 0x%016lx.\n", qr->qr_qt);
+
+    if (DMTR_OPC_PUSH != qr->qr_opcode) {
+        fprintf(stderr, "in `writeHandler()`, `qr.qr_opcode` must be `DMTR_OPC_PUSH`.\n");
+        abort();
+    }
+
+    c->written += qr->qr_value.sga.sga_segs[0].sgaseg_len;
+
+    ret = dmtr_pop(&qt, qr->qr_qd);
+    if (ret != 0) {
+        fprintf(stderr, "failed to start a `pop` operation.\n");
+        abort();
+    }
+
+    aeCreateQueueEvent(config.el,qt,readHandler,c);
+}
+
+void writeNextRequest(client c) {
+    if (NULL == c) {
+        fprintf(stderr, "`c` is `NULL`\n");
+        abort();
+    }
 
     /* Initialize request when nothing was written. */
     if (c->written == 0) {
@@ -276,19 +335,23 @@ static void writeHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     }
 
     if (sdslen(c->obuf) > c->written) {
-        void *ptr = c->obuf+c->written;
-        ssize_t nwritten = write(c->context->fd,ptr,sdslen(c->obuf)-c->written);
-        if (nwritten == -1) {
-            if (errno != EPIPE)
-                fprintf(stderr, "Writing to socket: %s\n", strerror(errno));
-            freeClient(c);
-            return;
+        dmtr_sgarray_t sga;
+        dmtr_qtoken_t qt = 0;
+        int ret;
+
+        //fprintf(stderr, "writeNextRequest(): starting push operation...\n");
+
+        memset(&sga, 0, sizeof(sga));
+        sga.sga_numsegs = 1;
+        sga.sga_segs[0].sgaseg_buf = c->obuf+c->written;
+        sga.sga_segs[0].sgaseg_len = sdslen(c->obuf)-c->written;
+        ret = dmtr_push(&qt, c->context->qd, &sga);
+        if (ret != 0) {
+            fprintf(stderr, "failed to push");
+            abort();
         }
-        c->written += nwritten;
-        if (sdslen(c->obuf) == c->written) {
-            aeDeleteFileEvent(config.el,c->context->fd,AE_WRITABLE);
-            aeCreateFileEvent(config.el,c->context->fd,AE_READABLE,readHandler,c);
-        }
+
+        aeCreateQueueEvent(config.el,qt,writeHandler,c);
     }
 }
 
@@ -404,7 +467,7 @@ static client createClient(char *cmd, size_t len, client from) {
         }
     }
     if (config.idlemode == 0)
-        aeCreateFileEvent(config.el,c->context->fd,AE_WRITABLE,writeHandler,c);
+        writeNextRequest(c);
     listAddNodeTail(config.clients,c);
     config.liveclients++;
     return c;
@@ -649,12 +712,19 @@ int main(int argc, const char **argv) {
     int i;
     char *data, *cmd;
     int len;
+    int ret;
 
     client c;
 
     srandom(time(NULL));
     signal(SIGHUP, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
+
+    ret = dmtr_init(0, NULL);
+    if (0 != ret) {
+        fprintf(stderr, "Unable to initialize Demeter.\n");
+        return ret;
+    }
 
     config.numclients = 50;
     config.requests = 100000;

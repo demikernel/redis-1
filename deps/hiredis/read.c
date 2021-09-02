@@ -43,6 +43,8 @@
 #include "read.h"
 #include "sds.h"
 
+#include <dmtr/types.h>
+
 static void __redisReaderSetError(redisReader *r, int type, const char *str) {
     size_t len;
 
@@ -442,7 +444,7 @@ void redisReaderFree(redisReader *r) {
     free(r);
 }
 
-int redisReaderFeed(redisReader *r, const char *buf, size_t len) {
+int redisReaderFeed(redisReader *r, const dmtr_sgarray_t *sga) {
     sds newbuf;
 
     /* Return early when this reader is in an erroneous state. */
@@ -450,7 +452,7 @@ int redisReaderFeed(redisReader *r, const char *buf, size_t len) {
         return REDIS_ERR;
 
     /* Copy the provided buffer. */
-    if (buf != NULL && len >= 1) {
+    if (sga != NULL && sga->sga_numsegs >= 1) {
         /* Destroy internal buffer when it is empty and is quite large. */
         if (r->len == 0 && r->maxbuf != 0 && sdsavail(r->buf) > r->maxbuf) {
             sdsfree(r->buf);
@@ -461,10 +463,15 @@ int redisReaderFeed(redisReader *r, const char *buf, size_t len) {
             assert(r->buf != NULL);
         }
 
-        newbuf = sdscatlen(r->buf,buf,len);
-        if (newbuf == NULL) {
-            __redisReaderSetErrorOOM(r);
-            return REDIS_ERR;
+        newbuf = r->buf;
+        for (size_t i = 0; i < sga->sga_numsegs; ++i) {
+            const char *buf = (const char *)sga->sga_segs[i].sgaseg_buf;
+            size_t len = sga->sga_segs[i].sgaseg_len;
+            newbuf = sdscatlen(newbuf,buf,len);
+            if (newbuf == NULL) {
+                __redisReaderSetErrorOOM(r);
+                return REDIS_ERR;
+            }
         }
 
         r->buf = newbuf;

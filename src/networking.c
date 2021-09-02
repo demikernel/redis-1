@@ -32,6 +32,10 @@
 #include <sys/uio.h>
 #include <math.h>
 #include <ctype.h>
+#include <arpa/inet.h>
+
+#include <dmtr/libos.h>
+#include <dmtr/sga.h>
 
 static void setProtocolError(const char *errstr, client *c, long pos);
 
@@ -75,14 +79,22 @@ client *createClient(int fd) {
      * in the context of a client. When commands are executed in other
      * contexts (for instance a Lua script) we need a non connected client. */
     if (fd != -1) {
+        int ret;
+        dmtr_qtoken_t qt = 0;
+
         anetNonBlock(NULL,fd);
         anetEnableTcpNoDelay(NULL,fd);
         if (server.tcpkeepalive)
             anetKeepAlive(NULL,fd,server.tcpkeepalive);
-        if (aeCreateFileEvent(server.el,fd,AE_READABLE,
+
+        //fprintf(stderr, "createClient(): starting pop operation...\n");
+
+        ret = dmtr_pop(&qt, fd);
+        if (0 != ret ||
+            aeCreateQueueEvent(server.el,qt,
             readQueryFromClient, c) == AE_ERR)
         {
-            close(fd);
+            dmtr_close(fd);
             zfree(c);
             return NULL;
         }
@@ -678,24 +690,45 @@ static void acceptCommonHandler(int fd, int flags, char *ip) {
     c->flags |= flags;
 }
 
-void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
-    int cport, cfd, max = MAX_ACCEPTS_PER_CALL;
+void acceptTcpHandler(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *privdata) {
+    int cport, ret;
     char cip[NET_IP_STR_LEN];
-    UNUSED(el);
-    UNUSED(mask);
+    dmtr_qtoken_t qt = 0;
+    const struct sockaddr_in *s =NULL;
     UNUSED(privdata);
 
-    while(max--) {
-        cfd = anetTcpAccept(server.neterr, fd, cip, sizeof(cip), &cport);
-        if (cfd == ANET_ERR) {
-            if (errno != EWOULDBLOCK)
-                serverLog(LL_WARNING,
-                    "Accepting client connection: %s", server.neterr);
-            return;
-        }
-        serverLog(LL_VERBOSE,"Accepted %s:%d", cip, cport);
-        acceptCommonHandler(cfd,0,cip);
+    if (NULL == qr) {
+        fprintf(stderr, "acceptTcpHandler(): `qr` cannot be `NULL`\n");
+        abort();
     }
+
+    //fprintf(stderr, "acceptTcpHandler(): Accepted connection on qd 0x%08x.\n", qr->qr_qd);
+
+    ret = dmtr_accept(&qt, qr->qr_qd);
+    if (0 != ret) {
+        fprintf(stderr, "acceptTcpHandler(): failed to start next accept() operation.\n");
+        abort();
+    }
+
+    if (aeCreateQueueEvent(el, qt,
+        acceptTcpHandler,NULL) == AE_ERR)
+    {
+        fprintf(stderr, "acceptTcpHandler(): failed to create queue event.\n");
+        abort();
+    }
+
+    if (0 != code) {
+        fprintf(stderr, "acceptTcpHandler(): failed to complete accept() operation (code %d)\n", code);
+        return;
+    }
+
+    // copied from `anetTcpAccept()`.
+    s = &qr->qr_value.ares.addr;
+    inet_ntop(AF_INET,(void*)&(s->sin_addr),cip,sizeof(cip));
+    cport = ntohs(s->sin_port);
+
+    fprintf(stderr, "Accepted connection from %s:%d.\n", cip, cport);
+    acceptCommonHandler(qr->qr_value.ares.qd, 0, cip);
 }
 
 void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
@@ -754,9 +787,8 @@ void unlinkClient(client *c) {
         listDelNode(server.clients,ln);
 
         /* Unregister async I/O handlers and close the socket. */
-        aeDeleteFileEvent(server.el,c->fd,AE_READABLE);
-        aeDeleteFileEvent(server.el,c->fd,AE_WRITABLE);
-        close(c->fd);
+        aeDeleteQueueEvents(server.el, c);
+        (void)dmtr_close(c->fd);
         c->fd = -1;
     }
 
@@ -896,16 +928,35 @@ void freeClientsInAsyncFreeQueue(void) {
 /* Write data in output buffers to client. Return C_OK if the client
  * is still valid after the call, C_ERR if it was freed. */
 int writeToClient(int fd, client *c, int handler_installed) {
-    ssize_t nwritten = 0, totwritten = 0;
+    ssize_t totwritten = 0;
     size_t objlen;
     sds o;
+    int ret;
 
     while(clientHasPendingReplies(c)) {
         if (c->bufpos > 0) {
-            nwritten = write(fd,c->buf+c->sentlen,c->bufpos-c->sentlen);
-            if (nwritten <= 0) break;
-            c->sentlen += nwritten;
-            totwritten += nwritten;
+            dmtr_sgarray_t sga;
+            dmtr_qtoken_t qt;
+            size_t len;
+            uint64_t t0;
+
+            //fprintf(stderr, "writeToClient(): sync push operation (c->bufpos > 0)...\n");
+
+            len = c->bufpos-c->sentlen;
+            memset(&sga, 0, sizeof(sga));
+            sga.sga_numsegs = 1;
+            sga.sga_segs[0].sgaseg_buf = c->buf+c->sentlen;
+            sga.sga_segs[0].sgaseg_len = len;
+            t0 = dmtr_now_ns();
+            ret = dmtr_push(&qt, fd, &sga);
+            if (0 != ret) break;
+            (void)dmtr_record_latency(aePushLatency, dmtr_now_ns() - t0);
+            t0 = dmtr_now_ns();
+            ret = dmtr_wait(NULL, qt);
+            if (0 != ret) break;
+            (void)dmtr_record_latency(aeWaitForPushLatency, dmtr_now_ns() - t0);
+            c->sentlen += len;
+            totwritten += len;
 
             /* If the buffer was sent, set bufpos to zero to continue with
              * the remainder of the reply. */
@@ -914,6 +965,11 @@ int writeToClient(int fd, client *c, int handler_installed) {
                 c->sentlen = 0;
             }
         } else {
+            dmtr_sgarray_t sga;
+            dmtr_qtoken_t qt;
+            size_t len;
+            uint64_t t0;
+
             o = listNodeValue(listFirst(c->reply));
             objlen = sdslen(o);
 
@@ -922,10 +978,23 @@ int writeToClient(int fd, client *c, int handler_installed) {
                 continue;
             }
 
-            nwritten = write(fd, o + c->sentlen, objlen - c->sentlen);
-            if (nwritten <= 0) break;
-            c->sentlen += nwritten;
-            totwritten += nwritten;
+            //fprintf(stderr, "writeToClient(): sync push operation (!(c->bufpos > 0))...\n");
+
+            len = objlen - c->sentlen;
+            memset(&sga, 0, sizeof(sga));
+            sga.sga_numsegs = 1;
+            sga.sga_segs[0].sgaseg_buf = o + c->sentlen;
+            sga.sga_segs[0].sgaseg_len = len;
+            t0 = dmtr_now_ns();
+            ret = dmtr_push(&qt, fd, &sga);
+            if (0 != ret) break;
+            (void)dmtr_record_latency(aePushLatency, dmtr_now_ns() - t0);
+            t0 = dmtr_now_ns();
+            ret = dmtr_wait(NULL, qt);
+            if (0 != ret) break;
+            (void)dmtr_record_latency(aeWaitForPushLatency, dmtr_now_ns() - t0);
+            c->sentlen += len;
+            totwritten += len;
 
             /* If we fully sent the object on head go to the next one */
             if (c->sentlen == objlen) {
@@ -956,15 +1025,11 @@ int writeToClient(int fd, client *c, int handler_installed) {
             !(c->flags & CLIENT_SLAVE)) break;
     }
     server.stat_net_output_bytes += totwritten;
-    if (nwritten == -1) {
-        if (errno == EAGAIN) {
-            nwritten = 0;
-        } else {
-            serverLog(LL_VERBOSE,
-                "Error writing to client: %s", strerror(errno));
-            freeClient(c);
-            return C_ERR;
-        }
+    if (ret != 0 && ret != EAGAIN) {
+        serverLog(LL_VERBOSE,
+            "Error writing to client: %s", strerror(ret));
+        freeClient(c);
+        return C_ERR;
     }
     if (totwritten > 0) {
         /* For clients representing masters we don't count sending data
@@ -975,7 +1040,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
     }
     if (!clientHasPendingReplies(c)) {
         c->sentlen = 0;
-        if (handler_installed) aeDeleteFileEvent(server.el,c->fd,AE_WRITABLE);
+        if (handler_installed) aeDeleteQueueEvents(server.el,c);
 
         /* Close connection after entire reply has been sent. */
         if (c->flags & CLIENT_CLOSE_AFTER_REPLY) {
@@ -984,13 +1049,6 @@ int writeToClient(int fd, client *c, int handler_installed) {
         }
     }
     return C_OK;
-}
-
-/* Write event handler. Just send data to the client. */
-void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask) {
-    UNUSED(el);
-    UNUSED(mask);
-    writeToClient(fd,privdata,1);
 }
 
 /* This function is called just before entering the event loop, in the hope
@@ -1025,8 +1083,8 @@ int handleClientsWithPendingWrites(void) {
             {
                 ae_flags |= AE_BARRIER;
             }
-            if (aeCreateFileEvent(server.el, c->fd, ae_flags,
-                sendReplyToClient, c) == AE_ERR)
+
+            if (writeToClient(c->fd,c,0) == C_ERR)
             {
                     freeClientAsync(c);
             }
@@ -1373,12 +1431,35 @@ void processInputBuffer(client *c) {
     server.current_client = NULL;
 }
 
-void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
+void readQueryFromClient(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *privdata) {
     client *c = (client*) privdata;
     int nread, readlen;
     size_t qblen;
-    UNUSED(el);
-    UNUSED(mask);
+    dmtr_sgarray_t *sga = NULL;
+    dmtr_qtoken_t qt = 0;
+    int ret = -1;
+
+    if (NULL == qr) {
+        fprintf(stderr, "`qr` is not allowed to be `NULL`\n");
+        abort();
+    }
+
+    if (0 != code) {
+        if (ECONNABORTED == code || ECONNRESET == code) {
+            fprintf(stderr, "readQueryFromClient(): client disconnected\n");
+        } else {
+            fprintf(stderr, "readQueryFromClient(): failure to complete operation (completion code %d)\n", code);
+        }
+        freeClient(c);
+        return;
+    }
+
+    if (qr->qr_opcode != DMTR_OPC_POP) {
+        fprintf(stderr, "`qr` must be the result of a `pop` operation.\n");
+        abort();
+    }
+
+    //fprintf(stderr, "readQueryFromClient(): completing pop (qt 0x%016lx).\n", qr->qr_qt);
 
     readlen = PROTO_IOBUF_LEN;
     /* If this is a multi bulk request, and we are processing a bulk reply
@@ -1398,20 +1479,24 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
     qblen = sdslen(c->querybuf);
     if (c->querybuf_peak < qblen) c->querybuf_peak = qblen;
     c->querybuf = sdsMakeRoomFor(c->querybuf, readlen);
-    nread = read(fd, c->querybuf+qblen, readlen);
-    if (nread == -1) {
-        if (errno == EAGAIN) {
-            return;
-        } else {
-            serverLog(LL_VERBOSE, "Reading from client: %s",strerror(errno));
-            freeClient(c);
-            return;
-        }
-    } else if (nread == 0) {
-        serverLog(LL_VERBOSE, "Client closed connection");
-        freeClient(c);
-        return;
-    } else if (c->flags & CLIENT_MASTER) {
+
+    sga = &qr->qr_value.sga;
+    if (sga->sga_numsegs != 1) {
+        fprintf(stderr, "`readQueryFromClient()` only supports single segment sga objects .\n");
+        abort();
+    }
+
+    nread = sga->sga_segs[0].sgaseg_len;
+    if (readlen < nread) {
+        fprintf(stderr, "incorrect segment length.\n");
+        abort();
+    }
+
+    memcpy(c->querybuf+qblen, sga->sga_segs[0].sgaseg_buf, nread);
+    dmtr_sgafree(sga);
+    sga = NULL;
+
+    if (c->flags & CLIENT_MASTER) {
         /* Append the query buffer to the pending (not applied) buffer
          * of the master. We'll use this buffer later in order to have a
          * copy of the string applied by the last command executed. */
@@ -1451,6 +1536,17 @@ void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask) {
                     c->pending_querybuf, applied);
             sdsrange(c->pending_querybuf,applied,-1);
         }
+    }
+
+    //fprintf(stderr, "readQueryFromClient(): starting pop operation...\n");
+
+    ret = dmtr_pop(&qt, qr->qr_qd);
+    if (0 != ret ||
+        aeCreateQueueEvent(el,qt,
+        readQueryFromClient, c) == AE_ERR)
+    {
+        dmtr_close(qr->qr_qd);
+        zfree(c);
     }
 }
 

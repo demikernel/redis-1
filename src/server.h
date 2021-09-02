@@ -49,6 +49,8 @@
 #include <lua.h>
 #include <signal.h>
 
+#include <dmtr/types.h>
+
 typedef long long mstime_t; /* millisecond time type. */
 
 #include "ae.h"      /* Event driven programming library */
@@ -72,6 +74,8 @@ typedef long long mstime_t; /* millisecond time type. */
 #include "sha1.h"
 #include "endianconv.h"
 #include "crc64.h"
+
+#include <dmtr/types.h>
 
 /* Error codes */
 #define C_OK                    0
@@ -1343,14 +1347,13 @@ void closeTimedoutClients(void);
 void freeClient(client *c);
 void freeClientAsync(client *c);
 void resetClient(client *c);
-void sendReplyToClient(aeEventLoop *el, int fd, void *privdata, int mask);
 void *addDeferredMultiBulkLength(client *c);
 void setDeferredMultiBulkLength(client *c, void *node, long length);
 void processInputBuffer(client *c);
 void acceptHandler(aeEventLoop *el, int fd, void *privdata, int mask);
-void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+void acceptTcpHandler(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *privdata);
 void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask);
-void readQueryFromClient(aeEventLoop *el, int fd, void *privdata, int mask);
+void readQueryFromClient(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *privdata);
 void addReplyString(client *c, const char *s, size_t len);
 void addReplyBulk(client *c, robj *obj);
 void addReplyBulkCString(client *c, const char *s);

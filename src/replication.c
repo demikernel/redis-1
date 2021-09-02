@@ -37,6 +37,8 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 
+#include <dmtr/libos.h>
+
 void replicationDiscardCachedMaster(void);
 void replicationResurrectCachedMaster(int newfd);
 void replicationSendAck(void);
@@ -856,8 +858,7 @@ void putSlaveOnline(client *slave) {
     slave->replstate = SLAVE_STATE_ONLINE;
     slave->repl_put_online_on_ack = 0;
     slave->repl_ack_time = server.unixtime; /* Prevent false timeout. */
-    if (aeCreateFileEvent(server.el, slave->fd, AE_WRITABLE,
-        sendReplyToClient, slave) == AE_ERR) {
+    if (writeToClient(slave->fd,slave,0) == C_ERR) {
         serverLog(LL_WARNING,"Unable to register writable event for slave bulk transfer: %s", strerror(errno));
         freeClient(slave);
         return;
@@ -1331,7 +1332,7 @@ char *sendSynchronousCommand(int flags, int fd, ...) {
         }
         cmd = sdscatlen(cmd,"\r\n",2);
         va_end(ap);
-        
+
         /* Transfer command to the server. */
         if (syncWrite(fd,cmd,sdslen(cmd),server.repl_syncio_timeout*1000)
             == -1)
@@ -2202,6 +2203,9 @@ void replicationDiscardCachedMaster(void) {
  * so the stream of data that we'll receive will start from were this
  * master left. */
 void replicationResurrectCachedMaster(int newfd) {
+    int ret;
+    dmtr_qtoken_t qt = 0;
+
     server.master = server.cached_master;
     server.cached_master = NULL;
     server.master->fd = newfd;
@@ -2212,7 +2216,14 @@ void replicationResurrectCachedMaster(int newfd) {
 
     /* Re-add to the list of clients. */
     listAddNodeTail(server.clients,server.master);
-    if (aeCreateFileEvent(server.el, newfd, AE_READABLE,
+
+    ret = dmtr_pop(&qt, newfd);
+    if (ret != 0) {
+        fprintf(stderr, "failed to start `pop` operation\n");
+        abort();
+    }
+
+    if (aeCreateQueueEvent(server.el, qt,
                           readQueryFromClient, server.master)) {
         serverLog(LL_WARNING,"Error resurrecting the cached master, impossible to add the readable handler: %s", strerror(errno));
         freeClientAsync(server.master); /* Close ASAP. */
@@ -2221,8 +2232,7 @@ void replicationResurrectCachedMaster(int newfd) {
     /* We may also need to install the write handler as well if there is
      * pending data in the write buffers. */
     if (clientHasPendingReplies(server.master)) {
-        if (aeCreateFileEvent(server.el, newfd, AE_WRITABLE,
-                          sendReplyToClient, server.master)) {
+        if (writeToClient(newfd,server.master,0) == C_ERR) {
             serverLog(LL_WARNING,"Error resurrecting the cached master, impossible to add the writable handler: %s", strerror(errno));
             freeClientAsync(server.master); /* Close ASAP. */
         }
