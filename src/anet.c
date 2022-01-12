@@ -68,11 +68,11 @@ int anetSetBlock(char *err, int fd, int non_block) {
     int flags;
     int ret, flag;
 
-    ret = dmtr_is_qd_valid(&flag, fd);
-    if (ret != 0) {
-        fprintf(stderr, "failure to validate qd.\n");
-        abort();
-    }
+    /* ret = dmtr_is_qd_valid(&flag, fd); */
+    /* if (ret != 0) { */
+    /*     fprintf(stderr, "failure to validate qd.\n"); */
+    /*     abort(); */
+    /* } */
 
     if (flag) {
         return ANET_OK;
@@ -115,11 +115,11 @@ int anetKeepAlive(char *err, int fd, int interval)
     int val = 1;
     int ret, flag;
 
-    ret = dmtr_is_qd_valid(&flag, fd);
-    if (ret != 0) {
-        fprintf(stderr, "failure to validate qd.\n");
-        abort();
-    }
+    /* ret = dmtr_is_qd_valid(&flag, fd); */
+    /* if (ret != 0) { */
+    /*     fprintf(stderr, "failure to validate qd.\n"); */
+    /*     abort(); */
+    /* } */
 
     if (flag) {
         return ANET_OK;
@@ -171,11 +171,11 @@ static int anetSetTcpNoDelay(char *err, int fd, int val)
 {
     int ret, flag;
 
-    ret = dmtr_is_qd_valid(&flag, fd);
-    if (ret != 0) {
-        fprintf(stderr, "failure to validate qd.\n");
-        abort();
-    }
+    /* ret = dmtr_is_qd_valid(&flag, fd); */
+    /* if (ret != 0) { */
+    /*     fprintf(stderr, "failure to validate qd.\n"); */
+    /*     abort(); */
+    /* } */
 
     if (flag) {
         return ANET_OK;
@@ -204,11 +204,11 @@ int anetSetSendBuffer(char *err, int fd, int buffsize)
 {
     int ret, flag;
 
-    ret = dmtr_is_qd_valid(&flag, fd);
-    if (ret != 0) {
-        fprintf(stderr, "failure to validate qd.\n");
-        abort();
-    }
+    /* ret = dmtr_is_qd_valid(&flag, fd); */
+    /* if (ret != 0) { */
+    /*     fprintf(stderr, "failure to validate qd.\n"); */
+    /*     abort(); */
+    /* } */
 
     if (flag) {
         return ANET_OK;
@@ -228,11 +228,11 @@ int anetTcpKeepAlive(char *err, int fd)
     int yes = 1;
     int ret, flag;
 
-    ret = dmtr_is_qd_valid(&flag, fd);
-    if (ret != 0) {
-        fprintf(stderr, "failure to validate qd.\n");
-        abort();
-    }
+    /* ret = dmtr_is_qd_valid(&flag, fd); */
+    /* if (ret != 0) { */
+    /*     fprintf(stderr, "failure to validate qd.\n"); */
+    /*     abort(); */
+    /* } */
 
     if (flag) {
         return ANET_OK;
@@ -252,11 +252,11 @@ int anetSendTimeout(char *err, int fd, long long ms) {
     struct timeval tv;
     int ret, flag;
 
-    ret = dmtr_is_qd_valid(&flag, fd);
-    if (ret != 0) {
-        fprintf(stderr, "failure to validate qd.\n");
-        abort();
-    }
+    /* ret = dmtr_is_qd_valid(&flag, fd); */
+    /* if (ret != 0) { */
+    /*     fprintf(stderr, "failure to validate qd.\n"); */
+    /*     abort(); */
+    /* } */
 
     if (flag) {
         return ANET_OK;
@@ -318,11 +318,11 @@ static int anetSetReuseAddr(char *err, int fd) {
     int yes = 1;
     int ret, flag;
 
-    ret = dmtr_is_qd_valid(&flag, fd);
-    if (ret != 0) {
-        fprintf(stderr, "failure to validate qd.\n");
-        abort();
-    }
+    /* ret = dmtr_is_qd_valid(&flag, fd); */
+    /* if (ret != 0) { */
+    /*     fprintf(stderr, "failure to validate qd.\n"); */
+    /*     abort(); */
+    /* } */
 
     if (flag) {
         return ANET_OK;
