@@ -35,6 +35,7 @@
 #include <arpa/inet.h>
 
 #include <dmtr/libos.h>
+#include <dmtr/wait.h>
 #include <dmtr/sga.h>
 
 static void setProtocolError(const char *errstr, client *c, long pos);
