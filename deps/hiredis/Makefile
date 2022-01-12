@@ -42,11 +42,12 @@ OPTIMIZATION?=-O3
 WARNINGS=-Wall -W -Wstrict-prototypes -Wwrite-strings
 DEBUG_FLAGS?= -g -ggdb
 
-ZEUS_CFLAGS := -I$(DEMETER_INCLUDE)
-ZEUS_LDFLAGS := -L$(dir $(DEMETER_SO)) -Wl,-rpath,$(dir $(DEMETER_SO)) -l:$(notdir $(DEMETER_SO))
+export DEMIKERNEL_REPO_DIR ?= /home/irene/demikernel                                                                  
+export DEMIKERNEL_INCLUDE_DIR ?= $(DEMIKERNEL_REPO_DIR)/include                                                       
+export DEMIKERNEL_LIBOS_SO ?= $(DEMIKERNEL_REPO_DIR)/src/target/release/libcatnip_libos.so 
 
-CFLAGS += $(ZEUS_CFLAGS)
-LDFLAGS += $(ZEUS_LDFLAGS)
+CFLAGS += -I $(DEMIKERNEL_INCLUDE_DIR)
+LDFLAGS += -l$(DEMIKERNEL_LIBOS_SO)
 
 REAL_CFLAGS=$(OPTIMIZATION) -fPIC $(CFLAGS) $(WARNINGS) $(DEBUG_FLAGS) $(ARCH)
 REAL_LDFLAGS=$(LDFLAGS) $(ARCH)
