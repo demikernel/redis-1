@@ -12,7 +12,6 @@
 # Dependencies are stored in the Makefile.dep file. To rebuild this file
 # Just use 'make dep', but this is only needed by developers.
 #
-DEMIKERNEL_SRC_DIR ?= $(HOME)/include
 
 release_hdr := $(shell sh -c './mkreleasehdr.sh')
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
@@ -66,19 +65,18 @@ endif
 # Override default settings if possible
 -include .make-settings
 
-ZEUS_CFLAGS := -I$(DEMETER_INCLUDE)
-ZEUS_LDFLAGS := -L$(dir $(DEMETER_LIBOS_SO)) #-Wl,-rpath,$(dir $(DEMETER_LIBOS_SO)) -L$(dir $(DEMETER_LATENCY_A)) -L$(dir $(DEMETER_COMMON_A)) -L$(dir $(DEMETER_BASE_A))
+export DEMIKERNEL_REPO_DIR ?= /home/irene/demikernel
+export DEMIKERNEL_INCLUDE_DIR ?= $(DEMIKERNEL_REPO_DIR)/include
+export DEMIKERNEL_LIBOS_SO ?= $(DEMIKERNEL_REPO_DIR)/src/target/release/libcatnip_libos.so
 
 FINAL_CFLAGS=$(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS) $(REDIS_CFLAGS)
 FINAL_LDFLAGS=$(LDFLAGS) $(REDIS_LDFLAGS) $(DEBUG)
 FINAL_LIBS=-lm
 DEBUG=-g -ggdb
 
-ZEUS_LIBS := -l:$(notdir $(DEMETER_LIBOS_SO)) #-l:$(notdir $(DEMETER_LATENCY_A) ) -l:$(notdir $(DEMETER_COMMON_A)) -l:$(notdir $(DEMETER_BASE_A)) -lboost_chrono -lboost_system -lstdc++
-FINAL_CFLAGS += $(ZEUS_CFLAGS)
-FINAL_LDFLAGS += $(ZEUS_LDFLAGS)
-FINAL_LDFLAGS += $(DPDK_LDFLAGS)
-FINAL_LIBS += $(ZEUS_LIBS)
+FINAL_CFLAGS += -Wall -Wextra -O3 -I $(DEMIKERNEL_INCLUDE_DIR)
+#FINAL_LDFLAGS += 
+FINAL_LIBS += -l:$(DEMIKERNEL_LIBOS_SO)
 
 
 ifeq ($(uname_S),SunOS)
