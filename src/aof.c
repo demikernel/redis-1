@@ -41,7 +41,6 @@
 #include <sys/param.h>
 
 #include <dmtr/libos.h>
-#include <dmtr/latency.h>
 
 void aofUpdateCurrentSize(void);
 void aofClosePipes(void);
