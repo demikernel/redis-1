@@ -58,7 +58,6 @@
 
 #include <dmtr/libos.h>
 #include <dmtr/annot.h>
-#include <dmtr/latency.h>
 
 /* Our shared "common" objects */
 
@@ -1932,6 +1931,7 @@ void initServer(void) {
 	 * domain sockets. */
 	for (j = 0; j < server.ipfd_count; j++) {
 		int ret;
+        // switch to using dmtr accept 
 		dmtr_qtoken_t qt;
 
 		ret = dmtr_accept(&qt, server.ipfd[j]);
