@@ -17,7 +17,7 @@ release_hdr := $(shell sh -c './mkreleasehdr.sh')
 uname_S := $(shell sh -c 'uname -s 2>/dev/null || echo not')
 uname_M := $(shell sh -c 'uname -m 2>/dev/null || echo not')
 OPTIMIZATION?=-O2
-DEPENDENCY_TARGETS=hiredis linenoise lua
+DEPENDENCY_TARGETS=hiredis linenoise #lua
 NODEPS:=clean distclean
 #$(info $$CC is [${CC}])
 
@@ -65,19 +65,14 @@ endif
 # Override default settings if possible
 -include .make-settings
 
-export DEMIKERNEL_REPO_DIR ?= /home/irene/demikernel
-export DEMIKERNEL_INCLUDE_DIR ?= $(DEMIKERNEL_REPO_DIR)/include
-export DEMIKERNEL_LIBOS_SO ?= $(DEMIKERNEL_REPO_DIR)/src/target/release/libcatnip_libos.so
+export DEMIKERNEL_REPO_DIR = /home/irene/demikernel
+export DEMIKERNEL_INCLUDE_DIR = $(DEMIKERNEL_REPO_DIR)/include
+export DEMIKERNEL_LIBOS_SO = $(DEMIKERNEL_REPO_DIR)/src/target/release/libcatnip_libos.so
 
-FINAL_CFLAGS=$(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS) $(REDIS_CFLAGS)
+FINAL_CFLAGS=$(STD) $(WARN) $(OPT) $(DEBUG) $(CFLAGS) $(REDIS_CFLAGS) -I $(DEMIKERNEL_INCLUDE_DIR)
 FINAL_LDFLAGS=$(LDFLAGS) $(REDIS_LDFLAGS) $(DEBUG)
-FINAL_LIBS=-lm
+FINAL_LIBS=-lm $(DEMIKERNEL_LIBOS_SO)
 DEBUG=-g -ggdb
-
-FINAL_CFLAGS += -Wall -Wextra -O3 -I $(DEMIKERNEL_INCLUDE_DIR)
-#FINAL_LDFLAGS += 
-FINAL_LIBS += -l:$(DEMIKERNEL_LIBOS_SO)
-
 
 ifeq ($(uname_S),SunOS)
 	# SunOS
