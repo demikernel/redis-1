@@ -55,6 +55,7 @@
 #include "sds.h"
 
 #include <dmtr/libos.h>
+#include <dmtr/wait.h>
 
 #define UNUSED(V) ((void) V)
 
