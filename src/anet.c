@@ -51,6 +51,7 @@
 
 #include <dmtr/libos.h>
 #include <dmtr/sga.h>
+#include <dmtr/wait.h>
 
 #define UNUSED(x) (void)(x)
 
