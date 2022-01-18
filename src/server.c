@@ -3758,8 +3758,7 @@ int main(int argc, char **argv) {
 		return -1; /* test not found */
 	}
 #endif
-	char *config_args[] = {(char *)"--config", (char *)"/home/irene/config.yaml"};
-	ret = dmtr_init(2, config_args);
+	ret = dmtr_init(0, NULL);
 	if (ret != 0) {
 		fprintf(stderr, "Failed to initialize Demeter.\n");
 		return ret;
