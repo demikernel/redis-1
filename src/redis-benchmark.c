@@ -385,6 +385,7 @@ static client createClient(char *cmd, size_t len, client from) {
     } else {
         c->context = redisConnectUnixNonBlock(config.hostsocket);
     }
+    fprintf(stderr, "Successfully connected to %s:%d\n", config.hostip, config.hostport);
     if (c->context->err) {
         fprintf(stderr,"Could not connect to Redis at ");
         if (config.hostsocket == NULL)
