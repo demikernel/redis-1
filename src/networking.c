@@ -942,7 +942,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
 
 			//fprintf(stderr, "writeToClient(): sync push operation (c->bufpos > 0)...\n");
 
-            memcpy(sga->sga_buf, (void *)c->buf+c->sentlen, len);
+            memcpy(sga.sga_buf, (void *)c->buf+c->sentlen, len);
 			ret = dmtr_push(&qt, fd, &sga);
 			if (0 != ret) break;
 			ret = dmtr_wait(NULL, qt);
@@ -974,7 +974,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
 
 			len = objlen - c->sentlen;
             sga = dmtr_sgaalloc(len);
-            memcpy(sga->sga_buf, (void *) o + c->sentlen, len);
+            memcpy(sga.sga_buf, (void *) o + c->sentlen, len);
 			ret = dmtr_push(&qt, fd, &sga);
 			if (0 != ret) break;
 			ret = dmtr_wait(NULL, qt);
