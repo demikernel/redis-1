@@ -335,16 +335,17 @@ void writeNextRequest(client c) {
     }
 
     if (sdslen(c->obuf) > c->written) {
-        dmtr_sgarray_t sga;
+        // Calculate length of message
+        size_t len = sdslen(c->obuf)-c->written;
+        // Allocate a Demikernel scatter gather array
+        dmtr_sgarray_t sga = dmtr_sgaalloc(len);
         dmtr_qtoken_t qt = 0;
         int ret;
 
         fprintf(stderr, "writeNextRequest(): starting push operation...\n");
 
-        memset(&sga, 0, sizeof(sga));
-        sga.sga_numsegs = 1;
-        sga.sga_segs[0].sgaseg_buf = c->obuf+c->written;
-        sga.sga_segs[0].sgaseg_len = sdslen(c->obuf)-c->written;
+        // copy from write buffer to Demikernel scatter gather array
+        memcpy(sga->sga_buf, (void *)c->obuf+c->written, len);
         ret = dmtr_push(&qt, c->context->qd, &sga);
         if (ret != 0) {
             fprintf(stderr, "failed to push");

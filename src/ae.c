@@ -184,7 +184,7 @@ void aeDeleteQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt) {
 		return;
 	}
 
-	(void)dmtr_drop(qt);
+	//(void)dmtr_drop(qt);
 	HASH_DEL(eventLoop->qEvents, e);
 	zfree(e);
 }

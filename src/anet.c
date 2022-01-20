@@ -557,15 +557,12 @@ int anetRead(int qd, char *buf, int count)
  * (unless error is encountered) */
 int anetWrite(int qd, char *buf, int count)
 {
-    dmtr_sgarray_t sga;
+    dmtr_sgarray_t sga = dmtr_sgaalooc(count);
     dmtr_qtoken_t qt;
     dmtr_qresult_t qr;
     int ret;
 
-    memset(&sga, 0, sizeof(sga));
-    sga.sga_numsegs = 1;
-    sga.sga_segs[0].sgaseg_buf = buf;
-    sga.sga_segs[0].sgaseg_len = count;
+    memcpy(sga->sga_buf, buf, count)
     ret = dmtr_push(&qt, qd, &sga);
     if (0 != ret) {
         return -1;

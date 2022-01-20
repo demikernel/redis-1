@@ -936,18 +936,13 @@ int writeToClient(int fd, client *c, int handler_installed) {
 
 	while(clientHasPendingReplies(c)) {
 		if (c->bufpos > 0) {
-			dmtr_sgarray_t sga;
+			size_t len = c->bufpos-c->sentlen;;
+			dmtr_sgarray_t sga = dmtr_sgaalloc(len);
 			dmtr_qtoken_t qt;
-			size_t len;
-			uint64_t t0;
 
 			//fprintf(stderr, "writeToClient(): sync push operation (c->bufpos > 0)...\n");
 
-			len = c->bufpos-c->sentlen;
-			memset(&sga, 0, sizeof(sga));
-			sga.sga_numsegs = 1;
-			sga.sga_segs[0].sgaseg_buf = c->buf+c->sentlen;
-			sga.sga_segs[0].sgaseg_len = len;
+            memcpy(sga->sga_buf, (void *)c->buf+c->sentlen, len);
 			ret = dmtr_push(&qt, fd, &sga);
 			if (0 != ret) break;
 			ret = dmtr_wait(NULL, qt);
@@ -969,7 +964,7 @@ int writeToClient(int fd, client *c, int handler_installed) {
 
 			o = listNodeValue(listFirst(c->reply));
 			objlen = sdslen(o);
-
+                
 			if (objlen == 0) {
 				listDelNode(c->reply,listFirst(c->reply));
 				continue;
@@ -978,10 +973,8 @@ int writeToClient(int fd, client *c, int handler_installed) {
 			//fprintf(stderr, "writeToClient(): sync push operation (!(c->bufpos > 0))...\n");
 
 			len = objlen - c->sentlen;
-			memset(&sga, 0, sizeof(sga));
-			sga.sga_numsegs = 1;
-			sga.sga_segs[0].sgaseg_buf = o + c->sentlen;
-			sga.sga_segs[0].sgaseg_len = len;
+            sga = dmtr_sgaalloc(len);
+            memcpy(sga->sga_buf, (void *) o + c->sentlen, len);
 			ret = dmtr_push(&qt, fd, &sga);
 			if (0 != ret) break;
 			ret = dmtr_wait(NULL, qt);
