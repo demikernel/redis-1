@@ -345,7 +345,7 @@ void writeNextRequest(client c) {
         fprintf(stderr, "writeNextRequest(): starting push operation...\n");
 
         // copy from write buffer to Demikernel scatter gather array
-        memcpy(sga.sga_buf, (void *)c->obuf+c->written, len);
+        memcpy(sga.sga_segs[0].sgaseg_buf, (void *)(c->obuf+c->written), len);
         ret = dmtr_push(&qt, c->context->qd, &sga);
         if (ret != 0) {
             fprintf(stderr, "failed to push");

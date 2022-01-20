@@ -562,7 +562,7 @@ int anetWrite(int qd, char *buf, int count)
     dmtr_qresult_t qr;
     int ret;
 
-    memcpy(sga.sga_buf, buf, count)
+    memcpy(sga.sga_segs[0].sgaseg_buf, buf, count)
     ret = dmtr_push(&qt, qd, &sga);
     if (0 != ret) {
         return -1;
