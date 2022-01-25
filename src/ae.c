@@ -154,7 +154,7 @@ int aeCreateQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt, aeQueueProc *qP
 		return AE_ERR;
 	}
 
-	fprintf(stderr, "acCreateQueueEvent(): scheduling event 0x%016lx.\n", qt);
+	//fprintf(stderr, "acCreateQueueEvent(): scheduling event 0x%016lx.\n", qt);
 	aeQueueEvent *e = (aeQueueEvent *)zmalloc(sizeof(struct aeQueueEvent));
 	memset(e, 0, sizeof(*e));
 	e->qt = qt;
@@ -177,7 +177,7 @@ void aeDeleteQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t qt) {
 		abort();
 	}
 
-	fprintf(stderr, "aeDeleteQueueEvent: deleting qt 0x%016lx.\n", qt);
+	//fprintf(stderr, "aeDeleteQueueEvent: deleting qt 0x%016lx.\n", qt);
 
 	HASH_FIND(hh, eventLoop->qEvents, &qt, sizeof(qt), e);
 	if (NULL == e) {
@@ -202,7 +202,7 @@ aeQueueEvent* aeDeleteCompletedQueueEvent(aeEventLoop *eventLoop, dmtr_qtoken_t 
 		abort();
 	}
 
-	fprintf(stderr, "aeDeleteQueueEvent: deleting qt 0x%016lx.\n", qt);
+	//fprintf(stderr, "aeDeleteQueueEvent: deleting qt 0x%016lx.\n", qt);
 
 	HASH_FIND(hh, eventLoop->qEvents, &qt, sizeof(qt), e);
 	if (NULL == e) {
@@ -221,7 +221,7 @@ void aeDeleteQueueEvents(aeEventLoop *eventLoop, void *clientData) {
 		abort();
 	}
 
-	fprintf(stderr, "aeDeleteQueueEvents: deleting all queue events associated with %p.\n", clientData);
+	//fprintf(stderr, "aeDeleteQueueEvents: deleting all queue events associated with %p.\n", clientData);
 
 	HASH_ITER(hh, eventLoop->qEvents, e, tmp) {
 		if (clientData == e->clientData) {
