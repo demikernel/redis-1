@@ -209,7 +209,7 @@ static void readHandler(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *pri
         break;
     }
 
-    fprintf(stderr, "readHandler(): completing qt 0x%016lx.\n", qr->qr_qt);
+    //fprintf(stderr, "readHandler(): completing qt 0x%016lx.\n", qr->qr_qt);
 
     /* Calculate latency only for the first read event. This means that the
      * server already sent the reply and we need to parse it. Parsing overhead
@@ -296,7 +296,7 @@ static void writeHandler(aeEventLoop *el, int code, dmtr_qresult_t *qr, void *pr
             break;
     }
 
-    fprintf(stderr, "writeHandler(): completing qt 0x%016lx.\n", qr->qr_qt);
+    //fprintf(stderr, "writeHandler(): completing qt 0x%016lx.\n", qr->qr_qt);
 
     if (DMTR_OPC_PUSH != qr->qr_opcode) {
         fprintf(stderr, "in `writeHandler()`, `qr.qr_opcode` must be `DMTR_OPC_PUSH`.\n");
@@ -342,7 +342,7 @@ void writeNextRequest(client c) {
         dmtr_qtoken_t qt = 0;
         int ret;
 
-        fprintf(stderr, "writeNextRequest(): starting push operation...\n");
+        //fprintf(stderr, "writeNextRequest(): starting push operation...\n");
 
         // copy from write buffer to Demikernel scatter gather array
         memcpy(sga.sga_segs[0].sgaseg_buf, (void *)(c->obuf+c->written), len);
