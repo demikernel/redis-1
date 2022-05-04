@@ -34,6 +34,9 @@
 #define __AE_H__
 
 #include "monotonic.h"
+#ifdef __DEMIKERNEL__
+#include <dmtr/types.h>
+#endif
 
 #define AE_OK 0
 #define AE_ERR -1
@@ -61,6 +64,11 @@
 #define AE_NOTUSED(V) ((void) V)
 
 struct aeEventLoop;
+
+/* BIG HACK: We'll just keep the result here for now */
+#ifdef __DEMIKERNEL__
+dmtr_qresult_t recent_qr;
+#endif
 
 /* Types and data structures */
 typedef void aeFileProc(struct aeEventLoop *eventLoop, int fd, void *clientData, int mask);

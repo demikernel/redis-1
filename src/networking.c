@@ -36,6 +36,11 @@
 #include <math.h>
 #include <ctype.h>
 
+#ifdef __DEMIKERNEL__
+#include <dmtr/libos.h>
+#include <arpa/inet.h>
+#endif
+
 static void setProtocolError(const char *errstr, client *c);
 int postponeClientRead(client *c);
 int ProcessingEventsWhileBlocked = 0; /* See processEventsWhileBlocked(). */
@@ -1347,6 +1352,25 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
         acceptCommonHandler(connCreateAcceptedSocket(cfd),0,cip);
     }
 }
+
+#ifdef __DEMIKERNEL__
+void acceptDemikernelHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
+    /* BAD HACK: grab the result from the first fired event */
+    dmtr_qresult_t *qr = &recent_qr;//&el->fired[0].qr;
+    int cfd = qr->qr_value.ares.qd;
+    struct sockaddr_in *s = &qr->qr_value.ares.addr;
+    char cip[NET_IP_STR_LEN];
+    UNUSED(fd);
+    UNUSED(mask);
+    UNUSED(privdata);
+
+    /* convert IP to string */
+    inet_ntop(AF_INET,(void*)&(s->sin_addr),cip,NET_IP_STR_LEN);
+    //printf("Demikernel Accepted %s:%d cfd=%u\n", cip, ntohs(s->sin_port), cfd);
+    //    serverLog(LL_VERBOSE,"Accepted %s:%d", cip, ntohs(s.sin_port));
+    acceptCommonHandler(connCreateAcceptedDemiQ(cfd),0,cip);
+}
+#endif
 
 void acceptTLSHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     int cport, cfd, max = MAX_ACCEPTS_PER_CALL;

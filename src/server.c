@@ -2237,11 +2237,20 @@ int createSocketAcceptHandler(socketFds *sfd, aeFileProc *accept_handler) {
     int j;
 
     for (j = 0; j < sfd->count; j++) {
+#ifdef __DEMIKERNEL__
+        connection *conn = connCreateListeningSocket(sfd->fd[j]);
+        if (aeCreateFileEvent(server.el, sfd->fd[j], AE_READABLE, accept_handler,conn) == AE_ERR) {
+            /* Rollback */
+            for (j = j-1; j >= 0; j--) aeDeleteFileEvent(server.el, sfd->fd[j], AE_READABLE);
+            return C_ERR;
+        }
+#else
         if (aeCreateFileEvent(server.el, sfd->fd[j], AE_READABLE, accept_handler,NULL) == AE_ERR) {
             /* Rollback */
             for (j = j-1; j >= 0; j--) aeDeleteFileEvent(server.el, sfd->fd[j], AE_READABLE);
             return C_ERR;
         }
+#endif
     }
     return C_OK;
 }
@@ -2565,9 +2574,15 @@ void initServer(void) {
 
     /* Create an event handler for accepting new connections in TCP and Unix
      * domain sockets. */
+#if __DEMIKERNEL__
+    if (createSocketAcceptHandler(&server.ipfd, acceptDemikernelHandler) != C_OK) {
+        serverPanic("Unrecoverable error creating Demikernel TCP socket accept handler.");
+    }
+#else
     if (createSocketAcceptHandler(&server.ipfd, acceptTcpHandler) != C_OK) {
         serverPanic("Unrecoverable error creating TCP socket accept handler.");
     }
+#endif
     if (createSocketAcceptHandler(&server.tlsfd, acceptTLSHandler) != C_OK) {
         serverPanic("Unrecoverable error creating TLS socket accept handler.");
     }
@@ -2577,12 +2592,13 @@ void initServer(void) {
 
     /* Register a readable event for the pipe used to awake the event loop
      * from module threads. */
+#ifndef __DEMIKERNEL__
     if (aeCreateFileEvent(server.el, server.module_pipe[0], AE_READABLE,
         modulePipeReadable,NULL) == AE_ERR) {
             serverPanic(
                 "Error registering the readable event for the module pipe.");
     }
-
+#endif
     /* Register before and after sleep handlers (note this needs to be done
      * before loading persistence since it is used by processEventsWhileBlocked. */
     aeSetBeforeSleepProc(server.el,beforeSleep);
@@ -7007,6 +7023,10 @@ int main(int argc, char **argv) {
     } else {
         serverLog(LL_WARNING, "Configuration loaded");
     }
+
+#ifdef __DEMIKERNEL__
+    dmtr_init(0, NULL);
+#endif
 
     initServer();
     if (background || server.pidfile) createPidFile();

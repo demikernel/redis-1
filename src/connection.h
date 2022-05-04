@@ -43,6 +43,9 @@ typedef enum {
     CONN_STATE_NONE = 0,
     CONN_STATE_CONNECTING,
     CONN_STATE_ACCEPTING,
+#ifdef __DEMIKERNEL__
+    CONN_STATE_LISTENING,
+#endif
     CONN_STATE_CONNECTED,
     CONN_STATE_CLOSED,
     CONN_STATE_ERROR
@@ -53,6 +56,9 @@ typedef enum {
 
 #define CONN_TYPE_SOCKET            1
 #define CONN_TYPE_TLS               2
+#ifdef __DEMIKERNEL__
+#define CONN_TYPE_DEMIKERNEL        3
+#endif
 
 typedef void (*ConnectionCallbackFunc)(struct connection *conn);
 
@@ -229,6 +235,10 @@ connection *connCreateAcceptedSocket(int fd);
 
 connection *connCreateTLS();
 connection *connCreateAcceptedTLS(int fd, int require_auth);
+#ifdef __DEMIKERNEL__
+connection *connCreateListeningSocket(int fd);
+connection *connCreateAcceptedDemiQ(int fd);
+#endif
 
 void connSetPrivateData(connection *conn, void *data);
 void *connGetPrivateData(connection *conn);

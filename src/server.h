@@ -64,6 +64,10 @@
 typedef long long mstime_t; /* millisecond time type. */
 typedef long long ustime_t; /* microsecond time type. */
 
+#ifdef __DEMIKERNEL__
+#include <dmtr/libos.h>
+#endif
+
 #include "ae.h"      /* Event driven programming library */
 #include "sds.h"     /* Dynamic safe strings */
 #include "dict.h"    /* Hash tables */
@@ -2441,6 +2445,9 @@ void setDeferredPushLen(client *c, void *node, long length);
 int processInputBuffer(client *c);
 void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void acceptTLSHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+#ifdef __DEMIKERNEL__
+void acceptDemikernelHandler(aeEventLoop *el, int fd, void *privdata, int mask);
+#endif
 void acceptUnixHandler(aeEventLoop *el, int fd, void *privdata, int mask);
 void readQueryFromClient(connection *conn);
 int prepareClientToWrite(client *c);

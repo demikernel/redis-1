@@ -49,6 +49,9 @@
 
 /* Include the best multiplexing layer supported by this system.
  * The following should be ordered by performances, descending. */
+#ifdef __DEMIKERNEL__
+#include "ae_demikernel.c"
+#else
 #ifdef HAVE_EVPORT
 #include "ae_evport.c"
 #else
@@ -61,6 +64,7 @@
         #include "ae_select.c"
         #endif
     #endif
+#endif
 #endif
 
 
