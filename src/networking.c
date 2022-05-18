@@ -3581,7 +3581,6 @@ void replaceClientCommandVector(client *c, int argc, robj **argv) {
     int j;
     retainOriginalCommandVector(c);
     freeClientArgv(c);
-    zfree(c->argv);
     c->argv = argv;
     c->argc = argc;
     c->argv_len_sum = 0;
