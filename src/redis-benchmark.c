@@ -73,7 +73,7 @@
 #define SHOW_THROUGHPUT_INTERVAL 250  /* 250ms */
 
 #ifdef __DEMIKERNEL__
-#include <dmtr/libos.h>
+#include <demi/libos.h>
 #endif
 
 #define CLIENT_GET_EVENTLOOP(c) \
@@ -1786,7 +1786,7 @@ int main(int argc, char **argv) {
 #endif
 
 #ifdef __DEMIKERNEL__
-        dmtr_init(0, NULL);
+        demi_init(0, NULL);
 #endif
 
     if (config.cluster_mode) {

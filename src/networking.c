@@ -37,7 +37,7 @@
 #include <ctype.h>
 
 #ifdef __DEMIKERNEL__
-#include <dmtr/libos.h>
+#include <demi/libos.h>
 #include <arpa/inet.h>
 #endif
 
@@ -1356,7 +1356,7 @@ void acceptTcpHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
 #ifdef __DEMIKERNEL__
 void acceptDemikernelHandler(aeEventLoop *el, int fd, void *privdata, int mask) {
     /* BAD HACK: grab the result from the first fired event */
-    dmtr_qresult_t *qr = &recent_qr;//&el->fired[0].qr;
+    demi_qresult_t *qr = &recent_qr;//&el->fired[0].qr;
     int cfd = qr->qr_value.ares.qd;
     struct sockaddr_in *s = &qr->qr_value.ares.addr;
     char cip[NET_IP_STR_LEN];
