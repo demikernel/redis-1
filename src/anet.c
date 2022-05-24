@@ -51,6 +51,7 @@
 
 #ifdef __DEMIKERNEL__
 #include <demi/libos.h>
+extern int IS_DEMIKERNEL_SERVER;
 #endif
 
 #define UNUSED(x) (void)(x)
@@ -434,6 +435,7 @@ static int anetListen(char *err, int s, struct sockaddr *sa, socklen_t len, int 
 #endif
 
 #ifdef __DEMIKERNEL__
+    IS_DEMIKERNEL_SERVER = 1;
     ret = demi_listen(s, backlog);
     if (ret != 0) {
         anetSetError(err, "listen: %s", strerror(ret));

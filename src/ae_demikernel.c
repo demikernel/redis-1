@@ -32,6 +32,8 @@
 #include <demi/libos.h>
 #include <stdbool.h>
 
+int IS_DEMIKERNEL_SERVER = 0;
+
 typedef struct aeApiState {
     /* map of fds to mask */
     int *fd_mask_map;
@@ -103,10 +105,14 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     if ((mask & AE_READABLE) && !(state->fd_mask_map[fd] & AE_READABLE)) {
         demi_qtoken_t qt = 1110; // for debugging
         int ret = 0;
-        /* BIG HACK: we always use the first queue descriptor for
-           listening, so we know to call accept instead of pop */
-        if (fd == 0)
-            ret = demi_accept(&qt, fd);
+        if (IS_DEMIKERNEL_SERVER)
+        {
+            /* BIG HACK: we always use the first queue descriptor for
+            listening, so we know to call accept instead of pop */
+            if (fd == 0)
+                ret = demi_accept(&qt, fd);
+            else ret = demi_pop(&qt, fd);
+        }
         else ret = demi_pop(&qt, fd);
 
         if (ret != 0) return -1;
