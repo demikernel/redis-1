@@ -48,10 +48,10 @@
 #include "win32.h"
 
 #ifdef __DEMIKERNEL__
-#include <dmtr/libos.h>
-#include <dmtr/sga.h>
-#include <dmtr/types.h>
-#include <dmtr/wait.h>
+#include <demi/libos.h>
+#include <demi/sga.h>
+#include <demi/types.h>
+#include <demi/wait.h>
 #endif
 
 /* Defined in hiredis.c */
@@ -60,7 +60,7 @@ void __redisSetError(redisContext *c, int type, const char *str);
 void redisNetClose(redisContext *c) {
     if (c && c->fd != REDIS_INVALID_FD) {
 #ifdef __DEMIKERNEL__
-        dmtr_close(c->fd);
+        demi_close(c->fd);
 #else
         close(c->fd);
 #endif
@@ -70,27 +70,27 @@ void redisNetClose(redisContext *c) {
 
 ssize_t redisNetRead(redisContext *c, char *buf, size_t bufcap) {
 #ifdef __DEMIKERNEL__
-    dmtr_qresult_t *qr = (dmtr_qresult_t *)c->privdata;
-    dmtr_qresult_t new_qr;
+    demi_qresult_t *qr = (demi_qresult_t *)c->privdata;
+    demi_qresult_t new_qr;
     if (!qr ||
         qr->qr_value.sga.sga_segs[0].sgaseg_len == 0 ||
         qr->qr_value.sga.sga_segs[0].sgaseg_buf == NULL ||
-        qr->qr_opcode != DMTR_OPC_POP) {
-        dmtr_qtoken_t qt;
+        qr->qr_opcode != DEMI_OPC_POP) {
+        demi_qtoken_t qt;
         qr = &new_qr;
-        int retval = dmtr_pop(&qt, c->fd);
+        int retval = demi_pop(&qt, c->fd);
         if (retval != 0) {
             return retval;
         }
-        retval = dmtr_wait(qr, qt);
+        retval = demi_wait(qr, qt);
         if (qr->qr_value.sga.sga_segs[0].sgaseg_len == 0 ||
             qr->qr_value.sga.sga_segs[0].sgaseg_buf == NULL ||
-            qr->qr_opcode != DMTR_OPC_POP)
+            qr->qr_opcode != DEMI_OPC_POP)
             return 0;
     }
     ssize_t nread = qr->qr_value.sga.sga_segs[0].sgaseg_len;
     memcpy(buf, qr->qr_value.sga.sga_segs[0].sgaseg_buf, nread);
-    dmtr_sgafree(&qr->qr_value.sga);
+    demi_sgafree(&qr->qr_value.sga);
 #else
     ssize_t nread = recv(c->fd, buf, bufcap, 0);
 #endif
@@ -117,19 +117,19 @@ ssize_t redisNetRead(redisContext *c, char *buf, size_t bufcap) {
 ssize_t redisNetWrite(redisContext *c) {
 #ifdef __DEMIKERNEL__
     ssize_t nwritten = hi_sdslen(c->obuf);
-    dmtr_sgarray_t sga = dmtr_sgaalloc(nwritten);
-    dmtr_qtoken_t qt;
-    dmtr_qresult_t qr;
+    demi_sgarray_t sga = demi_sgaalloc(nwritten);
+    demi_qtoken_t qt;
+    demi_qresult_t qr;
     int ret;
 
     memcpy(sga.sga_segs[0].sgaseg_buf, c->obuf, nwritten);
 
-    if (((ret = dmtr_push(&qt, c->fd, &sga)) != 0 ||
-         (ret = dmtr_wait(&qr, qt)) != 0) &&
+    if (((ret = demi_push(&qt, c->fd, &sga)) != 0 ||
+         (ret = demi_wait(&qr, qt)) != 0) &&
         ret != EAGAIN) {
         nwritten = ret;
     }
-    dmtr_sgafree(&sga);
+    demi_sgafree(&sga);
 #else
     ssize_t nwritten = send(c->fd, c->obuf, hi_sdslen(c->obuf), 0);
 #endif
@@ -168,7 +168,7 @@ static int redisSetReuseAddr(redisContext *c) {
 static int redisCreateSocket(redisContext *c, int type) {
 #ifdef __DEMIKERNEL__
     redisFD s;
-    int ret = dmtr_socket(&s, type, SOCK_STREAM, 0);
+    int ret = demi_socket(&s, type, SOCK_STREAM, 0);
     if (ret != 0) {
         __redisSetErrorFromErrno(c,REDIS_ERR_IO,NULL);
         return REDIS_ERR;
@@ -499,7 +499,7 @@ static int _redisContextConnectTcp(redisContext *c, const char *addr, int port,
     for (p = servinfo; p != NULL; p = p->ai_next) {
 addrretry:
 #ifdef __DEMIKERNEL__
-        retval = dmtr_socket(&s, p->ai_family,p->ai_socktype,p->ai_protocol);
+        retval = demi_socket(&s, p->ai_family,p->ai_socktype,p->ai_protocol);
 #else
         s = socket(p->ai_family,p->ai_socktype,p->ai_protocol);
 #endif
@@ -530,7 +530,7 @@ addrretry:
 
             for (b = bservinfo; b != NULL; b = b->ai_next) {
 #ifdef __DEMIKERNEL__
-                retval = dmtr_bind(s,b->ai_addr,b->ai_addrlen);
+                retval = demi_bind(s,b->ai_addr,b->ai_addrlen);
 #else
                 retval = bind(s,b->ai_addr,b->ai_addrlen);
 #endif
@@ -557,14 +557,14 @@ addrretry:
         memcpy(c->saddr, p->ai_addr, p->ai_addrlen);
         c->addrlen = p->ai_addrlen;
 #ifdef __DEMIKERNEL__
-        dmtr_qtoken_t qt;
-        dmtr_qresult_t qr;
-        retval = dmtr_connect(&qt,s,p->ai_addr,p->ai_addrlen);
+        demi_qtoken_t qt;
+        demi_qresult_t qr;
+        retval = demi_connect(&qt,s,p->ai_addr,p->ai_addrlen);
         if (retval != 0) {
             redisNetClose(c);
             continue;
         } 
-        retval = dmtr_wait(&qr, qt);
+        retval = demi_wait(&qr, qt);
         /* Demikernel doesn't use errno but just passes the value back */
         if (retval != 0) errno = retval;
 #else

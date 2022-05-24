@@ -35,7 +35,7 @@
 
 #include "monotonic.h"
 #ifdef __DEMIKERNEL__
-#include <dmtr/types.h>
+#include <demi/types.h>
 #endif
 
 #define AE_OK 0
@@ -67,7 +67,7 @@ struct aeEventLoop;
 
 /* BIG HACK: We'll just keep the result here for now */
 #ifdef __DEMIKERNEL__
-dmtr_qresult_t recent_qr;
+demi_qresult_t recent_qr;
 #endif
 
 /* Types and data structures */

@@ -65,7 +65,7 @@ typedef long long mstime_t; /* millisecond time type. */
 typedef long long ustime_t; /* microsecond time type. */
 
 #ifdef __DEMIKERNEL__
-#include <dmtr/libos.h>
+#include <demi/libos.h>
 #endif
 
 #include "ae.h"      /* Event driven programming library */

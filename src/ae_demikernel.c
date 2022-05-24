@@ -28,8 +28,9 @@
  * POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <dmtr/wait.h>
-#include <dmtr/libos.h>
+#include <demi/wait.h>
+#include <demi/libos.h>
+#include <stdbool.h>
 
 typedef struct aeApiState {
     /* map of fds to mask */
@@ -37,7 +38,7 @@ typedef struct aeApiState {
     /* number of qtokens actively in use */
     size_t num_qtokens;
     /* list of active qtokens */
-    dmtr_qtoken_t *qtokens;
+    demi_qtoken_t *qtokens;
     /* mapping from file descriptor to offset in the qtoken array */
     int *fd_to_qtoken;
     /* mapping from qtoken array to file descriptor*/
@@ -100,13 +101,13 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
     /* we only allow one event of each type so, check if some of the
        bits are already set */
     if ((mask & AE_READABLE) && !(state->fd_mask_map[fd] & AE_READABLE)) {
-        dmtr_qtoken_t qt = 1110; // for debugging
+        demi_qtoken_t qt = 1110; // for debugging
         int ret = 0;
         /* BIG HACK: we always use the first queue descriptor for
            listening, so we know to call accept instead of pop */
         if (fd == 0)
-            ret = dmtr_accept(&qt, fd);
-        else ret = dmtr_pop(&qt, fd);
+            ret = demi_accept(&qt, fd);
+        else ret = demi_pop(&qt, fd);
 
         if (ret != 0) return -1;
 
@@ -114,7 +115,7 @@ static int aeApiAddEvent(aeEventLoop *eventLoop, int fd, int mask) {
         int i = state->num_qtokens++;
 
         /* increase the size of the qtoken arrays */
-        state->qtokens = zrealloc(state->qtokens, sizeof(dmtr_qtoken_t) * state->num_qtokens);
+        state->qtokens = zrealloc(state->qtokens, sizeof(demi_qtoken_t) * state->num_qtokens);
         state->qtoken_to_fd = zrealloc(state->qtoken_to_fd, sizeof(int) * state->num_qtokens);
         /* place the qtoken at the end */
         state->qtokens[i] = qt;
@@ -156,7 +157,7 @@ static void aeApiDelEvent(aeEventLoop *eventLoop, int fd, int delmask) {
             state->fd_to_qtoken[moving_fd] = i;
         }
         /* resize the qtoken arrays */
-        state->qtokens = zrealloc(state->qtokens, sizeof(dmtr_qtoken_t) * state->num_qtokens);
+        state->qtokens = zrealloc(state->qtokens, sizeof(demi_qtoken_t) * state->num_qtokens);
         state->qtoken_to_fd = zrealloc(state->qtoken_to_fd, sizeof(int) * state->num_qtokens);        
     }
 
@@ -177,30 +178,30 @@ static int aeApiPoll(aeEventLoop *eventLoop, struct timeval *tvp) {
     
     aeApiState *state = eventLoop->apidata;
     int retval = 0, ready_offset = 100;
-    dmtr_qresult_t *qr = &recent_qr;
+    demi_qresult_t *qr = &recent_qr;
 
     if (state->num_writable_fds > 0) {
         eventLoop->fired[0].fd = state->writable_fd_list[0];
         eventLoop->fired[0].mask = AE_WRITABLE;
     } else if (state->num_qtokens > 0) {
-        retval = dmtr_wait_any(qr, &ready_offset, state->qtokens, state->num_qtokens);
+        retval = demi_wait_any(qr, &ready_offset, state->qtokens, state->num_qtokens);
 
-	/* dmtr_wait_any only returns one event at a time */
+	/* demi_wait_any only returns one event at a time */
 	if (retval == 0) {
 	    int mask = state->fd_mask_map[qr->qr_qd];
-	    dmtr_qtoken_t qt = 100; // for debugging
-	    if (qr->qr_opcode == DMTR_OPC_POP) {
+	    demi_qtoken_t qt = 100; // for debugging
+	    if (qr->qr_opcode == DEMI_OPC_POP) {
 		/* if no buffer is returned, then there was an error */            
 		if (qr->qr_value.sga.sga_segs[0].sgaseg_len == 0 ||
 		    qr->qr_value.sga.sga_segs[0].sgaseg_buf == NULL ||
 		    qr->qr_opcode == 5) {
 		    state->qtokens[ready_offset] = 0;
 		} else {
-		    retval = dmtr_pop(&qt, qr->qr_qd);
+		    retval = demi_pop(&qt, qr->qr_qd);
 		    state->qtokens[ready_offset] = qt;
 		}
-	    } else if (qr->qr_opcode == DMTR_OPC_ACCEPT) {
-		retval = dmtr_accept(&qt, qr->qr_qd);
+	    } else if (qr->qr_opcode == DEMI_OPC_ACCEPT) {
+		retval = demi_accept(&qt, qr->qr_qd);
 		state->qtokens[ready_offset] = qt;
 	    }
 	    if (retval != 0) {

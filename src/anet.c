@@ -50,7 +50,7 @@
 #include "config.h"
 
 #ifdef __DEMIKERNEL__
-#include <dmtr/libos.h>
+#include <demi/libos.h>
 #endif
 
 #define UNUSED(x) (void)(x)
@@ -419,7 +419,7 @@ int anetUnixGenericConnect(char *err, const char *path, int flags)
 
 static int anetListen(char *err, int s, struct sockaddr *sa, socklen_t len, int backlog) {
 #ifdef __DEMIKERNEL__
-    int ret = dmtr_bind(s,sa,len);
+    int ret = demi_bind(s,sa,len);
     if (ret != 0) {
         anetSetError(err, "bind: %s", strerror(ret));
         close(s);
@@ -434,7 +434,7 @@ static int anetListen(char *err, int s, struct sockaddr *sa, socklen_t len, int 
 #endif
 
 #ifdef __DEMIKERNEL__
-    ret = dmtr_listen(s, backlog);
+    ret = demi_listen(s, backlog);
     if (ret != 0) {
         anetSetError(err, "listen: %s", strerror(ret));
         close(s);
@@ -486,7 +486,7 @@ static int _anetTcpServer(char *err, int port, char *bindaddr, int af, int backl
     }
     for (p = servinfo; p != NULL; p = p->ai_next) {
 #ifdef __DEMIKERNEL__
-        dmtr_socket(&s, p->ai_family,p->ai_socktype,p->ai_protocol);
+        demi_socket(&s, p->ai_family,p->ai_socktype,p->ai_protocol);
 #else
         s = socket(p->ai_family,p->ai_socktype,p->ai_protocol);
 #endif
@@ -615,9 +615,9 @@ int anetFdToString(int fd, char *ip, size_t ip_len, int *port, int fd_to_str_typ
 
 #ifdef __DEMIKERNEL__
     if (fd_to_str_type == FD_TO_PEER_NAME) {
-        //if (dmtr_getpeername(fd, (struct sockaddr *)&sa, &salen) == -1) goto error;
+        //if (demi_getpeername(fd, (struct sockaddr *)&sa, &salen) == -1) goto error;
     } else {
-        //if (dmtr_getsockname(fd, (struct sockaddr *)&sa, &salen) == -1) goto error;
+        //if (demi_getsockname(fd, (struct sockaddr *)&sa, &salen) == -1) goto error;
     }
 #else
     if (fd_to_str_type == FD_TO_PEER_NAME) {

@@ -6902,7 +6902,7 @@ int main(int argc, char **argv) {
     }
 
 #ifdef __DEMIKERNEL__
-    dmtr_init(0, NULL);
+    demi_init(0, NULL);
 #endif
 
     initServer();

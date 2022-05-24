@@ -29,8 +29,8 @@
 
 #include "server.h"
 #include "connhelpers.h"
-#include <dmtr/sga.h>
-#include <dmtr/wait.h>
+#include <demi/sga.h>
+#include <demi/wait.h>
 
 ConnectionType CT_DemiSocket;
 
@@ -38,7 +38,7 @@ connection *connCreateDemikernelSocket() {
     connection *conn = zcalloc(sizeof(connection));
     conn->type = &CT_DemiSocket;
     conn->fd = -1;
-    conn->private_data = zcalloc(sizeof(dmtr_qresult_t));
+    conn->private_data = zcalloc(sizeof(demi_qresult_t));
     return conn;
 }
 
@@ -95,30 +95,30 @@ static void demiSocketClose(connection *conn) {
 }
 
 static int demiSocketWrite(connection *conn, const void *data, size_t data_len) {
-    dmtr_sgarray_t sga = dmtr_sgaalloc(data_len);
-    dmtr_qtoken_t qt;
-    dmtr_qresult_t qr;
+    demi_sgarray_t sga = demi_sgaalloc(data_len);
+    demi_qtoken_t qt;
+    demi_qresult_t qr;
     int ret;
     
     memcpy(sga.sga_segs[0].sgaseg_buf, data, data_len);
 
-    if (((ret = dmtr_push(&qt, conn->fd, &sga)) != 0 ||
-         (ret = dmtr_wait(&qr, qt)) != 0 ||
-         qr.qr_opcode != DMTR_OPC_PUSH) &&
+    if (((ret = demi_push(&qt, conn->fd, &sga)) != 0 ||
+         (ret = demi_wait(&qr, qt)) != 0 ||
+         qr.qr_opcode != DEMI_OPC_PUSH) &&
         ret != EAGAIN) {
         conn->last_errno = ret;
         return -1;
     }
 
-    dmtr_sgafree(&sga);
+    demi_sgafree(&sga);
     return data_len;
 }
 
 static int demiSocketWritev(connection *conn, const struct iovec *iov, int iovcnt) {
     size_t data_len = 0;
-    dmtr_sgarray_t sga;
-    dmtr_qtoken_t qt;
-    dmtr_qresult_t qr;
+    demi_sgarray_t sga;
+    demi_qtoken_t qt;
+    demi_qresult_t qr;
     int ret;
 
     printf("Sending ev: \n");
@@ -126,7 +126,7 @@ static int demiSocketWritev(connection *conn, const struct iovec *iov, int iovcn
     for (int i = 0; i < iovcnt; i++) {
         data_len += iov[i].iov_len;
     }
-    sga = dmtr_sgaalloc(data_len);
+    sga = demi_sgaalloc(data_len);
 
     char *offset = (char *)sga.sga_segs[0].sgaseg_buf;
     for (int i = 0; i < iovcnt; i++) {
@@ -134,24 +134,24 @@ static int demiSocketWritev(connection *conn, const struct iovec *iov, int iovcn
         offset += iov[i].iov_len;
     }
     
-    if (((ret = dmtr_push(&qt, conn->fd, &sga)) != 0 ||
-         (ret = dmtr_wait(&qr, qt)) != 0) &&
+    if (((ret = demi_push(&qt, conn->fd, &sga)) != 0 ||
+         (ret = demi_wait(&qr, qt)) != 0) &&
         errno != EAGAIN) {
         conn->last_errno = ret;
         return -1;
     }
-    dmtr_sgafree(&sga);
+    demi_sgafree(&sga);
     return data_len;
 }
 
 static int demiSocketRead(connection *conn, void *buf, size_t buf_len) {
     /* We're storing the result from the last wait in a global variable */
-    dmtr_qresult_t *qr = &recent_qr;
+    demi_qresult_t *qr = &recent_qr;
     UNUSED(conn);
 
     if (qr->qr_value.sga.sga_segs[0].sgaseg_len == 0 ||
         qr->qr_value.sga.sga_segs[0].sgaseg_buf == NULL ||
-        qr->qr_opcode != DMTR_OPC_POP) {
+        qr->qr_opcode != DEMI_OPC_POP) {
         //        conn->state = CONN_STATE_CLOSED;
         return 0;
     }
@@ -174,7 +174,7 @@ static int demiSocketRead(connection *conn, void *buf, size_t buf_len) {
         memcpy(buf, qr->qr_value.sga.sga_segs[0].sgaseg_buf, read_len);
     }
     //Irene: Use memory freely for debugging
-    //dmtr_sgafree(&qr->qr_value.sga);
+    //demi_sgafree(&qr->qr_value.sga);
     return read_len;
 }
 
