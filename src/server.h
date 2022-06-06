@@ -677,6 +677,10 @@ typedef struct readyList {
 
 /* With multiplexing we need to take per-client state.
  * Clients are taken in a linked list. */
+// TODO: add [(ptr, size); 32]
+// append a pointer to the scatter-gather list instead of "querybuf"
+// At send time, call cornflakes shim code to populate response and send
+// response
 typedef struct client {
     uint64_t id;            /* Client incremental unique ID. */
     int fd;                 /* Client socket. */

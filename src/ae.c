@@ -620,7 +620,14 @@ int aeWait(int fd, int mask, long long milliseconds) {
 	}
 }
 
+// TODO: change to call "datapath.pop"
+// TODO: figure out
 void aeMain(aeEventLoop *eventLoop) {
+    // datapath = new_datapath()
+    // while (!stop) {
+    //      Vec<(conn_id, msg_id, data)> = datapath.pop();
+    //
+    // }
 	eventLoop->stop = 0;
 	while (!eventLoop->stop) {
 		if (eventLoop->beforesleep != NULL)

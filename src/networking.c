@@ -72,6 +72,7 @@ int listMatchObjects(void *a, void *b) {
 	return equalStringObjects(a,b);
 }
 
+// TODO: modify to have space for outgoing scatter-gather arrays
 client *createClient(int fd) {
 	client *c = zmalloc(sizeof(client));
 

@@ -164,6 +164,7 @@ int getGenericCommand(client *c) {
         addReply(c,shared.wrongtypeerr);
         return C_ERR;
     } else {
+        // TODO: append pointer to key-value into static array into client
         addReplyBulk(c,o);
         return C_OK;
     }
